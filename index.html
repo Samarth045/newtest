@@ -51,7 +51,7 @@ function seed(){return{accounts:[
 {id:"cash",name:"Cash",opening:0,minBalance:0,note:""}
 ],budgets:{},tx:[],recurring:[],goals:[],theme:"auto"}}
 let S=JSON.parse(localStorage.getItem(KEY)||"null")||seed();
-function migrateState(){if(!S.accounts)S.accounts=[];S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0});if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});if(!S.budgets)S.budgets={};if(!S.tx)S.tx=[];if(!S.recurring)S.recurring=[];if(!S.goals)S.goals=[];localStorage.setItem(KEY,JSON.stringify(S))}
+function migrateState(){if(!S.accounts)S.accounts=[];S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0});if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});S.accounts=S.accounts.filter(a=>a.id!=="icici");if(!S.budgets)S.budgets={};if(!S.tx)S.tx=[];if(!S.recurring)S.recurring=[];if(!S.goals)S.goals=[];localStorage.setItem(KEY,JSON.stringify(S))}
 migrateState();
 let tab="home",month=thisMonth(),query="";
 function save(makeBackup=true){localStorage.setItem(KEY,JSON.stringify(S));if(makeBackup)queueSnapshot()}
