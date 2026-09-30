@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="My Money Control">
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icon.svg">
-<title>My Money Control • v12</title>
+<title>My Money Control • v13</title>
 <style>
 :root{--bg:#f5f7fb;--card:#fff;--text:#101828;--muted:#667085;--line:#e4e7ec;--blue:#1570ef;--blue2:#155eef;--green:#12b76a;--red:#f04438;--orange:#f79009;--purple:#7f56d9;--cyan:#06aed4;--shadow:0 8px 30px rgba(16,24,40,.06)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:15px -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,sans-serif;padding-bottom:94px}
@@ -40,6 +40,7 @@ input,select,textarea{width:100%;background:var(--bg);color:var(--text);border:1
 <script>
 window.addEventListener("error",e=>{const el=document.getElementById("app");if(el&&(!el.innerHTML||el.innerHTML.trim()===""))el.innerHTML='<div class="card empty"><h2>My Money Control</h2><p>Recovered from a local app error.</p><button class="btn" onclick="location.reload()">Reload app</button></div>';});
 const KEY="mmc_pwa_v2";
+const TX_KEY=KEY+"_transactions";
 const OUT=["expense","investment","emi","saving"];
 const TYPES=["expense","income","investment","emi","saving","transfer","borrow","payback"];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -53,7 +54,18 @@ function ico(x){x=String(x||"").toLowerCase();for(const k in icons)if(x.includes
 function seed(){return{version:11,accounts:[{id:"boi",name:"BOI",opening:0,minBalance:0,note:""},{id:"hdfc",name:"HDFC",opening:0,minBalance:20000,note:"Salary"},{id:"kotak",name:"Kotak",opening:0,minBalance:0,note:"Reserve"},{id:"cash",name:"Cash",opening:0,minBalance:0,note:""}],budgets:{},tx:[],recurring:[],goals:[],settings:{theme:"auto",dailyReminder:false,budgetAlerts:true}}}
 let S=seed();
 try{const raw=localStorage.getItem(KEY);if(raw){const parsed=JSON.parse(raw);if(parsed&&typeof parsed==="object")S=parsed}}catch(e){try{localStorage.removeItem(KEY)}catch(_){} }
-function migrate(){if(!S||typeof S!=="object")S=seed();if(!Array.isArray(S.accounts))S.accounts=[];S.accounts=S.accounts.filter(a=>a&&a.id!=="icici");if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0;if(a.id==="hdfc"&&n(a.minBalance)===0)a.minBalance=20000});if(!S.budgets||typeof S.budgets!=="object"||Array.isArray(S.budgets))S.budgets={};if(!Array.isArray(S.tx))S.tx=[];if(!Array.isArray(S.recurring))S.recurring=[];if(!Array.isArray(S.goals))S.goals=[];if(!S.settings||typeof S.settings!=="object")S.settings={};if(!S.settings.theme)S.settings.theme="auto";if(S.settings.dailyReminder===undefined)S.settings.dailyReminder=false;if(S.settings.budgetAlerts===undefined)S.settings.budgetAlerts=true;S.version=11;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function migrate(){if(!S||typeof S!=="object")S=seed();if(!Array.isArray(S.accounts))S.accounts=[];S.accounts=S.accounts.filter(a=>a&&a.id!=="icici");if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0;if(a.id==="hdfc"&&n(a.minBalance)===0)a.minBalance=20000});if(!S.budgets||typeof S.budgets!=="object"||Array.isArray(S.budgets))S.budgets={};if(!Array.isArray(S.tx))S.tx=[];if(!Array.isArray(S.recurring))S.recurring=[];if(!Array.isArray(S.goals))S.goals=[];if(!S.settings||typeof S.settings!=="object")S.settings={};if(!S.settings.theme)S.settings.theme="auto";if(S.settings.dailyReminder===undefined)S.settings.dailyReminder=false;if(S.settings.budgetAlerts===undefined)S.settings.budgetAlerts=true;S.version=11;
+try{
+  const txRaw=localStorage.getItem(TX_KEY);
+  if(txRaw){
+    const txParsed=JSON.parse(txRaw);
+    if(Array.isArray(txParsed)) S.tx=txParsed;
+  }else{
+    localStorage.setItem(TX_KEY,JSON.stringify(S.tx));
+  }
+  localStorage.setItem(KEY,JSON.stringify(S));
+}catch(e){}
+}
 migrate();
 let tab="home",month=thisMonth(),query="",toastTimer;
 const IDB_NAME="MyMoneyControlBackup",IDB_STORE="snapshots",IDB_VERSION=2;
@@ -62,16 +74,22 @@ let backupQueued=false;
 function save(snapshot=true,mode="replace"){
   const previous=localStorage.getItem(KEY);
   if(snapshot&&previous)queueBackup(previous);
-  if(mode==="tx"&&previous){
-    try{
-      const latest=JSON.parse(previous);
-      const latestTx=Array.isArray(latest.tx)?latest.tx:[];
-      const currentTx=Array.isArray(S.tx)?S.tx:[];
+
+  try{
+    const latestTxRaw=localStorage.getItem(TX_KEY);
+    const latestTx=latestTxRaw?JSON.parse(latestTxRaw):[];
+    const currentTx=Array.isArray(S.tx)?S.tx:[];
+    if(mode==="tx"){
       const merged=new Map(latestTx.map(t=>[t.id,t]));
       currentTx.forEach(t=>merged.set(t.id,t));
-      S={...latest,...S,tx:Array.from(merged.values())};
-    }catch(e){}
-  }
+      S.tx=Array.from(merged.values());
+    }else if(Array.isArray(latestTx)){
+      // Non-transaction changes must never overwrite a newer transaction ledger.
+      S.tx=latestTx;
+    }
+    localStorage.setItem(TX_KEY,JSON.stringify(S.tx));
+  }catch(e){}
+
   localStorage.setItem(KEY,JSON.stringify(S));
   toast("Saved")
 }
@@ -135,7 +153,7 @@ function more(){const due=S.recurring.filter(r=>!S.tx.some(t=>t.recurringId===r.
 '<div class="sectionTitle">Financial insights</div><div class="grid2"><div class="metric"><span class="muted">Savings rate</span><b>'+Math.round((income(month)?(saved(month)+invested(month))/income(month)*100:0))+'%</b></div><div class="metric"><span class="muted">Recurring due</span><b>'+due.length+'</b></div><div class="metric"><span class="muted">Goals</span><b>'+S.goals.length+'</b></div><div class="metric"><span class="muted">Goal progress</span><b>'+money(goalSaved)+' / '+money(goalTotal)+'</b></div></div>'+
 '<div class="sectionTitle">Goals</div><div class="card">'+(S.goals.length?S.goals.map(g=>{const p=n(g.target)?Math.min(100,n(g.saved)/n(g.target)*100):0;return '<div style="padding:8px 0"><div class="row"><b>'+esc(g.name)+'</b><span>'+money(g.saved)+' / '+money(g.target)+'</span></div><div class="progress"><i style="width:'+p+'%;background:var(--green)"></i></div><div class="row sub"><span>'+Math.round(p)+'%</span><button class="btn small secondary" onclick="openGoal(\''+g.id+'\')">Edit</button></div></div>'}).join(""):'<div class="empty">Create an emergency fund, house, car or other goal.</div>')+'<button class="btn secondary" style="width:100%;margin-top:8px" onclick="openGoal()">+ Add goal</button></div>'+
 '<div class="sectionTitle">Recurring payments</div><div class="card">'+(S.recurring.length?S.recurring.map(r=>{const paid=!due.some(x=>x.id===r.id);return '<div class="row" style="padding:10px 0;border-bottom:1px solid var(--line)"><span><b>'+esc(r.name)+'</b><div class="sub">'+money(r.amount)+' • '+r.frequency+' • '+esc(acc(r.account).name)+'</div></span><span><button class="btn small '+(paid?"secondary":"")+'" onclick="markPaid(\''+r.id+'\')">'+(paid?"Paid":"Mark Paid")+'</button><button class="btn small ghost" onclick="deleteRecurring(\''+r.id+'\')">✕</button></span></div>'}).join(""):'<div class="empty">No recurring items.</div>')+'<button class="btn secondary" style="width:100%;margin-top:10px" onclick="openRecurring()">+ Add recurring</button></div>'+
-'<div class="sectionTitle">Data protection</div><div class="card"><div class="success">✓ Automatic local snapshots are enabled. Up to 40 recent snapshots are retained on this device.</div><button class="btn secondary" style="width:100%;margin-top:9px" onclick="restoreLatest()">Restore latest snapshot</button><hr><button class="btn" style="width:100%;margin-bottom:7px" onclick="backup()">Export full JSON backup</button><button class="btn secondary" style="width:100%;margin-bottom:7px" onclick="csv()">Export transactions CSV</button><button class="btn secondary" style="width:100%" onclick="document.getElementById(\'file\').click()">Import JSON backup</button><input id="file" type="file" accept=".json" style="display:none" onchange="restore(this)"><div class="sub" style="margin-top:9px">GitHub hosts the application code. Private financial records stay in this browser unless you export them.</div></div>'+
+'<div class="sectionTitle">Data protection</div><div class="card"><div class="success">✓ Automatic local snapshots are enabled. Up to 40 recent snapshots are retained on this device.</div><button class="btn secondary" style="width:100%;margin-top:9px" onclick="restoreLatest()">Restore latest snapshot</button><hr><button class="btn" style="width:100%;margin-bottom:7px" onclick="backup()">Export full JSON backup</button><button class="btn secondary" style="width:100%;margin-bottom:7px" onclick="csv()">Export transactions CSV</button><button class="btn secondary" style="width:100%" onclick="document.getElementById(\'file\').click()">Import JSON backup</button><input id="file" type="file" accept=".json" style="display:none" onchange="restore(this)"><div class="sub" style="margin-top:9px">Transactions are stored in a dedicated local ledger so adding one entry cannot replace earlier entries. GitHub hosts the application code. Private financial records stay in this browser unless you export them.</div></div>'+
 '<div class="sectionTitle">App settings</div><div class="card"><label>Theme</label><select onchange="setTheme(this.value)"><option value="auto" '+(S.settings.theme==="auto"?"selected":"")+'>System</option><option value="light" '+(S.settings.theme==="light"?"selected":"")+'>Light</option><option value="dark" '+(S.settings.theme==="dark"?"selected":"")+'>Dark</option></select><div class="toggle"><span><b>Budget alerts</b><div class="sub">Show warning when a plan reaches 80%.</div></span><input type="checkbox" '+(S.settings.budgetAlerts?"checked":"")+' onchange="S.settings.budgetAlerts=this.checked;save();render()"></div><div class="toggle"><span><b>Daily reminder</b><div class="sub">Browser notification support varies by device.</div></span><input type="checkbox" '+(S.settings.dailyReminder?"checked":"")+' onchange="S.settings.dailyReminder=this.checked;requestNotifications()"></div><button class="btn danger" style="width:100%;margin-top:12px" onclick="resetAll()">Reset all local data</button></div>'}
 function categoryOptions(type){const m={income:["Salary","Bonus","Freelance","Interest","Refund","Other"],expense:["Food & Dining","Transport","Shopping","Bills & Utilities","Health","Entertainment","Education","Rent","Subscriptions","Family","Petrol","Personal","Electricity","Other"],investment:["Mutual Fund SIP","Gold SIP","Stocks","Other Investment"],emi:["Bike EMI","Education EMI","Home Loan EMI","Personal Loan EMI","Other EMI"],saving:["Emergency Fund","General Savings","LIC","Other Saving"],transfer:["Account Transfer"],borrow:["Borrow"],payback:["Payback"]};return (m[type]||["Other"]).map(x=>'<option value="'+esc(x)+'">'+esc(x)+'</option>').join("")}
 function openTx(id,pre){const t=S.tx.find(x=>x.id===id)||{id:"",type:pre||"expense",amount:"",description:"",category:"",account:S.accounts[0]?.id||"",to:S.accounts[1]?.id||"",needWant:"Need",date:dateTimeLocal(),notes:""};document.getElementById("modal").innerHTML='<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="sheet"><div class="sheetHead"><div><h2>'+(id?"Edit transaction":"Add transaction")+'</h2><div class="sub">Every entry updates balances, plan tracking and insights.</div></div><button class="iconBtn" onclick="closeModal()">×</button></div><label>Amount</label><input id="a_amt" type="number" step="0.01" min="0.01" inputmode="decimal" value="'+esc(t.amount)+'" placeholder="0.00"><label>Type</label><select id="a_type" onchange="txTypeChange()">'+options(TYPES,t.type)+'</select><label>Category</label><select id="a_cat"><option value="">Select</option>'+categoryOptions(t.type)+'<option value="__custom">Custom</option></select><input id="a_custom" placeholder="Custom category" style="display:none" value="'+esc(t.category)+'"><label>Description</label><input id="a_desc" value="'+esc(t.description)+'" placeholder="Salary, Rent, MF SIP…"><label>From account</label><select id="a_acc">'+S.accounts.map(a=>'<option value="'+a.id+'" '+(a.id===t.account?"selected":"")+'>'+esc(a.name)+'</option>').join("")+'</select><div id="toField"><label>To account</label><select id="a_to">'+S.accounts.map(a=>'<option value="'+a.id+'" '+(a.id===t.to?"selected":"")+'>'+esc(a.name)+'</option>').join("")+'</select></div><div id="nwField"><label>Classification</label><select id="a_nw">'+options(["Need","Want","Investment","Family","Emergency","Other"],t.needWant)+'</select></div><label>Date & time</label><input id="a_date" type="datetime-local" value="'+esc(t.date)+'"><label>Notes</label><textarea id="a_notes" rows="2" placeholder="Optional notes">'+esc(t.notes||"")+'</textarea><div class="actions"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveTx(\''+id+'\')">Save transaction</button></div>'+(id?'<button class="btn danger" style="width:100%;margin-top:9px" onclick="deleteTx(\''+id+'\')">Delete transaction</button>':'')+'</div></div>';const cat=document.getElementById("a_cat"),custom=document.getElementById("a_custom");const preset=[...cat.options].map(o=>o.value);cat.value=preset.includes(t.category)?t.category:"__custom";custom.style.display=cat.value==="__custom"?"block":"none";cat.onchange=()=>custom.style.display=cat.value==="__custom"?"block":"none";txTypeChange()}
@@ -149,7 +167,7 @@ if(label&&label.tagName==="LABEL")label.textContent=type==="income"?"Income sour
 if(type==="income"){const acc=document.getElementById("a_acc");if(acc&&[...acc.options].some(o=>o.value==="hdfc"))acc.value="hdfc"}
 }
 function saveTx(id){const amount=n(document.getElementById("a_amt").value);if(amount<=0)return alert("Enter an amount greater than 0.");const type=document.getElementById("a_type").value,account=document.getElementById("a_acc").value,to=document.getElementById("a_to").value;if(["transfer","borrow","payback"].includes(type)&&account===to)return alert("Choose different accounts.");const selected=document.getElementById("a_cat").value,custom=document.getElementById("a_custom").value.trim(),category=selected==="__custom"?custom:selected;if(!category)return alert("Choose or enter a category.");const description=document.getElementById("a_desc").value.trim()||category, date=document.getElementById("a_date").value;const duplicate=S.tx.some(x=>x.id!==id&&x.type===type&&n(x.amount)===amount&&x.account===account&&(x.to||"")===(to||"")&&String(x.date)===String(date)&&String(x.description||"")===description);if(duplicate)return alert("A matching transaction already exists for this date and account.");const o={id:id||uid(),amount,type,category,description,account,to,needWant:document.getElementById("a_nw").value,date,notes:document.getElementById("a_notes").value};const i=S.tx.findIndex(x=>x.id===o.id);if(i>=0)S.tx[i]=o;else S.tx.push(o);save(true,"tx");closeModal();render()}
-function deleteTx(id){const t=S.tx.find(x=>x.id===id);if(!t)return;if(!confirm("Delete this transaction? A pre-change automatic snapshot will be created so you can restore it."))return;S.tx=S.tx.filter(x=>x.id!==id);save();closeModal();render();toast("Transaction deleted • restore from More → Data protection if needed")}
+function deleteTx(id){const t=S.tx.find(x=>x.id===id);if(!t)return;if(!confirm("Delete this transaction? A pre-change automatic snapshot will be created so you can restore it."))return;S.tx=S.tx.filter(x=>x.id!==id);save(true,"tx");closeModal();render();toast("Transaction deleted • restore from More → Data protection if needed")}
 function openBudget(name){const b=budgets(month).find(x=>x.name===name)||{name:"",amount:"",kind:"expense"};document.getElementById("modal").innerHTML='<div class="overlay"><div class="sheet"><div class="sheetHead"><h2>'+(name?"Edit plan item":"Add plan item")+'</h2><button class="iconBtn" onclick="closeModal()">×</button></div><label>Name</label><input id="b_name" value="'+esc(b.name)+'" placeholder="Rent, MF SIP, Food…"><label>Planned monthly amount</label><input id="b_amt" type="number" min="0" value="'+esc(b.amount)+'"><label>Plan type</label><select id="b_kind">'+options(["expense","investment","emi","saving"],b.kind)+'</select><div class="actions"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveBudget(\''+esc(name||"")+'\')">Save</button></div>'+(name?'<button class="btn danger" style="width:100%;margin-top:9px" onclick="deleteBudget(\''+esc(name)+'\')">Delete plan item</button>':'')+'</div></div>'}
 function saveBudget(old){const name=document.getElementById("b_name").value.trim(),amount=n(document.getElementById("b_amt").value);if(!name||amount<0)return alert("Enter a valid plan item.");const arr=budgets(month);if(old){const i=arr.findIndex(x=>x.name===old);if(i>=0)arr[i]={name,amount,kind:document.getElementById("b_kind").value}}else arr.push({name,amount,kind:document.getElementById("b_kind").value});S.budgets[month]=arr;save();closeModal();render()}
 function deleteBudget(name){if(!confirm("Delete this plan item? Existing transactions stay untouched."))return;S.budgets[month]=budgets(month).filter(x=>x.name!==name);save();closeModal();render()}
@@ -181,14 +199,31 @@ function closeModal(){document.getElementById("modal").innerHTML=""}
 function render(){applyTheme();let h=tab==="home"?home():tab==="tx"?transactions():tab==="budget"?budget():tab==="accounts"?accounts():more();document.getElementById("app").innerHTML=h;nav()}
 applyTheme();
 window.addEventListener("storage",e=>{
-  if(e.key!==KEY||!e.newValue)return;
+  if(!e.newValue)return;
   try{
-    const incoming=JSON.parse(e.newValue);
-    if(!incoming||!Array.isArray(incoming.tx))return;
-    S=incoming; migrate(); render(); toast("Synced latest data");
+    if(e.key===TX_KEY){
+      const incomingTx=JSON.parse(e.newValue);
+      if(Array.isArray(incomingTx)){
+        S.tx=incomingTx;
+        render();
+        toast("Synced transactions");
+      }
+      return;
+    }
+    if(e.key===KEY){
+      const incoming=JSON.parse(e.newValue);
+      if(!incoming||typeof incoming!=="object")return;
+      const localTx=Array.isArray(S.tx)?S.tx:[];
+      const incomingTx=Array.isArray(incoming.tx)?incoming.tx:[];
+      const latestRaw=localStorage.getItem(TX_KEY);
+      const latestTx=latestRaw?JSON.parse(latestRaw):incomingTx;
+      S={...incoming,tx:Array.isArray(latestTx)?latestTx:localTx};
+      render();
+      toast("Synced latest data");
+    }
   }catch(err){}
 });
-if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"}).then(r=>r.update()).catch(()=>{}));
+if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js?v=13",{updateViaCache:"none"}).then(r=>r.update()).catch(()=>{}));
 render();
 </script>
 </body>
