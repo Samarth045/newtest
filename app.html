@@ -39,10 +39,10 @@ input,select,textarea{width:100%;background:var(--bg);color:var(--text);border:1
 <div id="modal"></div>
 <script>
 window.addEventListener("error",e=>{const el=document.getElementById("app");if(el&&(!el.innerHTML||el.innerHTML.trim()===""))el.innerHTML='<div class="card empty"><h2>My Money Control</h2><p>Recovered from a local app error.</p><button class="btn" onclick="location.reload()">Reload app</button></div>';});
-const KEY="mmc_pwa_v14";
+const KEY="mmc_pwa_v15";
 const TX_KEY=KEY+"_transactions";
-const LEGACY_KEY="mmc_pwa_v2";
-const LEGACY_TX_KEY=LEGACY_KEY+"_transactions";
+const TX_ITEM_PREFIX=KEY+"_tx_";
+const LEGACY_KEYS=["mmc_pwa_v14","mmc_pwa_v2"];
 const OUT=["expense","investment","emi","saving"];
 const TYPES=["expense","income","investment","emi","saving","transfer","borrow","payback"];
 const uid=()=>{try{if(crypto&&typeof crypto.randomUUID==="function")return crypto.randomUUID()}catch(e){}return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12)+"-"+Math.random().toString(36).slice(2,12)};
@@ -56,32 +56,27 @@ function ico(x){x=String(x||"").toLowerCase();for(const k in icons)if(x.includes
 function seed(){return{version:14,accounts:[{id:"boi",name:"BOI",opening:0,minBalance:0,note:""},{id:"hdfc",name:"HDFC",opening:0,minBalance:20000,note:"Salary"},{id:"kotak",name:"Kotak",opening:0,minBalance:0,note:"Reserve"},{id:"cash",name:"Cash",opening:0,minBalance:0,note:""}],budgets:{},tx:[],recurring:[],goals:[],settings:{theme:"auto",dailyReminder:false,budgetAlerts:true}}}
 let S=seed();
 try{
-  // One-time migration from the old v2 storage namespace. The new namespace
-  // prevents an old open tab from writing stale data back over this app.
-  const raw=localStorage.getItem(KEY)||localStorage.getItem(LEGACY_KEY);
+  const raw=localStorage.getItem(KEY)||LEGACY_KEYS.map(k=>localStorage.getItem(k)).find(Boolean);
   if(raw){
     const parsed=JSON.parse(raw);
     if(parsed&&typeof parsed==="object")S=parsed;
   }
-  if(!localStorage.getItem(KEY)){
-    const legacyTx=localStorage.getItem(LEGACY_TX_KEY);
-    if(legacyTx){
-      const parsedTx=JSON.parse(legacyTx);
-      if(Array.isArray(parsedTx))S.tx=parsedTx;
-    }
-  }
 }catch(e){console.error("Storage migration failed",e)}
-function migrate(){if(!S||typeof S!=="object")S=seed();if(!Array.isArray(S.accounts))S.accounts=[];S.accounts=S.accounts.filter(a=>a&&a.id!=="icici");if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0;if(a.id==="hdfc"&&n(a.minBalance)===0)a.minBalance=20000});if(!S.budgets||typeof S.budgets!=="object"||Array.isArray(S.budgets))S.budgets={};if(!Array.isArray(S.tx))S.tx=[];if(!Array.isArray(S.recurring))S.recurring=[];if(!Array.isArray(S.goals))S.goals=[];if(!S.settings||typeof S.settings!=="object")S.settings={};if(!S.settings.theme)S.settings.theme="auto";if(S.settings.dailyReminder===undefined)S.settings.dailyReminder=false;if(S.settings.budgetAlerts===undefined)S.settings.budgetAlerts=true;S.version=14;
-try{
-  const txRaw=localStorage.getItem(TX_KEY);
-  if(txRaw){
-    const txParsed=JSON.parse(txRaw);
-    if(Array.isArray(txParsed)) S.tx=txParsed;
-  }else{
-    localStorage.setItem(TX_KEY,JSON.stringify(S.tx));
-  }
-  localStorage.setItem(KEY,JSON.stringify(S));
-}catch(e){}
+function migrate(){
+  if(!S||typeof S!=="object")S=seed();
+  if(!Array.isArray(S.accounts))S.accounts=[];
+  S.accounts=S.accounts.filter(a=>a&&a.id!=="icici");
+  if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});
+  S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0;if(a.id==="hdfc"&&n(a.minBalance)===0)a.minBalance=20000});
+  if(!S.budgets||typeof S.budgets!=="object"||Array.isArray(S.budgets))S.budgets={};
+  if(!Array.isArray(S.tx))S.tx=[];
+  if(!Array.isArray(S.recurring))S.recurring=[];
+  if(!Array.isArray(S.goals))S.goals=[];
+  if(!S.settings||typeof S.settings!=="object")S.settings={};
+  if(!S.settings.theme)S.settings.theme="auto";
+  if(S.settings.dailyReminder===undefined)S.settings.dailyReminder=false;
+  if(S.settings.budgetAlerts===undefined)S.settings.budgetAlerts=true;
+  S.version=15;
 }
 migrate();
 let tab="home",month=thisMonth(),query="",toastTimer;
@@ -90,15 +85,56 @@ function idb(){return new Promise((resolve,reject)=>{if(!("indexedDB"in window))
 let backupQueued=false;
 function loadTxLedger(){
   try{
-    const raw=localStorage.getItem(TX_KEY);
-    if(!raw)return Array.isArray(S.tx)?S.tx:[];
-    const parsed=JSON.parse(raw);
-    return Array.isArray(parsed)?parsed:[];
-  }catch(e){return Array.isArray(S.tx)?S.tx:[]}
+    const byId=new Map();
+    // Canonical ledger: each transaction has its own storage key.
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(!k||!k.startsWith(TX_ITEM_PREFIX))continue;
+      const raw=localStorage.getItem(k);
+      if(!raw)continue;
+      try{
+        const t=JSON.parse(raw);
+        if(t&&t.id)byId.set(String(t.id),t);
+      }catch(_){}
+    }
+    if(byId.size)return Array.from(byId.values());
+    // One-time migration from the previous array ledger.
+    for(const key of [TX_KEY,...LEGACY_KEYS.map(k=>k+"_transactions")]){
+      const raw=localStorage.getItem(key);
+      if(!raw)continue;
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed)){
+        parsed.forEach(t=>{if(t&&t.id)byId.set(String(t.id),t)});
+        if(byId.size){
+          const migrated=Array.from(byId.values());
+          writeTxLedger(migrated);
+          return migrated;
+        }
+      }
+    }
+    return [];
+  }catch(e){console.error("Transaction ledger read failed",e);return Array.isArray(S.tx)?S.tx:[]}
 }
 function writeTxLedger(tx){
-  localStorage.setItem(TX_KEY,JSON.stringify(Array.isArray(tx)?tx:[]));
+  const next=Array.isArray(tx)?tx.filter(t=>t&&t.id):[];
+  const keep=new Set(next.map(t=>String(t.id)));
+  // Remove deleted transactions.
+  const remove=[];
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&k.startsWith(TX_ITEM_PREFIX)){
+      const id=k.slice(TX_ITEM_PREFIX.length);
+      if(!keep.has(id))remove.push(k);
+    }
+  }
+  remove.forEach(k=>localStorage.removeItem(k));
+  // Each entry is independently persisted; adding one can never replace another.
+  next.forEach(t=>localStorage.setItem(TX_ITEM_PREFIX+String(t.id),JSON.stringify(t)));
+  // Keep the legacy array only as a compatibility/migration snapshot.
+  localStorage.setItem(TX_KEY,JSON.stringify(next));
 }
+S.tx=loadTxLedger();
+try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
 function save(snapshot=true,mode="state"){
   const previous=localStorage.getItem(KEY);
   if(snapshot&&previous)queueBackup(previous);
@@ -262,7 +298,7 @@ window.addEventListener("storage",e=>{
     }
   }catch(err){}
 });
-if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js?v=13",{updateViaCache:"none"}).then(r=>r.update()).catch(()=>{}));
+if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js?v=15",{updateViaCache:"none"}).then(r=>r.update()).catch(()=>{}));
 render();
 </script>
 </body>
