@@ -5,7 +5,7 @@ self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(keys=>Promise
 self.addEventListener("fetch",e=>{
   if(e.request.method!=="GET")return;
   const url=new URL(e.request.url);
-  if(url.pathname.endsWith("/index.html")||url.pathname.endsWith("/newtest/)){
+  if(url.pathname.endsWith("/index.html")||url.pathname.endsWith("/newtest/")){
     e.respondWith(fetch(e.request,{cache:"no-store"}).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put("./index.html",copy)).catch(()=>{});return r}).catch(()=>caches.match("./index.html")));
     return;
   }
