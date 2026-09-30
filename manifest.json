@@ -1,0 +1,12 @@
+{
+  "name":"My Money Control",
+  "short_name":"Money Control",
+  "description":"Offline-first personal finance manager",
+  "start_url":"./",
+  "scope":"./",
+  "display":"standalone",
+  "orientation":"portrait",
+  "background_color":"#f2f2f7",
+  "theme_color":"#0a84ff",
+  "icons":[{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
