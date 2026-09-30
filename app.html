@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="My Money Control">
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icon.svg">
-<title>My Money Control • v17</title>
+<title>My Money Control • v18</title>
 <style>
 :root{--bg:#f5f7fb;--card:#fff;--text:#101828;--muted:#667085;--line:#e4e7ec;--blue:#1570ef;--blue2:#155eef;--green:#12b76a;--red:#f04438;--orange:#f79009;--purple:#7f56d9;--cyan:#06aed4;--shadow:0 8px 30px rgba(16,24,40,.06)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:15px -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,sans-serif;padding-bottom:94px}
@@ -39,7 +39,7 @@ input,select,textarea{width:100%;background:var(--bg);color:var(--text);border:1
 <div id="modal"></div>
 <script>
 window.addEventListener("error",e=>{const el=document.getElementById("app");if(el&&(!el.innerHTML||el.innerHTML.trim()===""))el.innerHTML='<div class="card empty"><h2>My Money Control</h2><p>Recovered from a local app error.</p><button class="btn" onclick="location.reload()">Reload app</button></div>';});
-const KEY="mmc_pwa_v15";
+const KEY="mmc_pwa_v18";
 const TX_KEY=KEY+"_transactions";
 const TX_ITEM_PREFIX=KEY+"_tx_";
 const LEGACY_KEYS=["mmc_pwa_v14","mmc_pwa_v2"];
@@ -76,7 +76,7 @@ function migrate(){
   if(!S.settings.theme)S.settings.theme="auto";
   if(S.settings.dailyReminder===undefined)S.settings.dailyReminder=false;
   if(S.settings.budgetAlerts===undefined)S.settings.budgetAlerts=true;
-  S.version=15;
+  S.version=18;
 }
 migrate();
 let tab="home",month=thisMonth(),query="",toastTimer;
@@ -155,8 +155,8 @@ async function restoreLatest(){const b=await latestBackup();if(!b)return toast("
 function toast(msg){clearTimeout(toastTimer);let el=document.getElementById("toast");if(!el){el=document.createElement("div");el.id="toast";el.style.cssText="position:fixed;z-index:200;left:50%;bottom:105px;transform:translateX(-50%);background:#101828;color:#fff;padding:10px 14px;border-radius:999px;font-size:12px;font-weight:750;box-shadow:0 8px 25px #0004";document.body.appendChild(el)}el.textContent=msg;el.style.display="block";toastTimer=setTimeout(()=>el.style.display="none",1800)}
 function acc(id){return S.accounts.find(a=>a.id===id)||{name:"Unknown",opening:0,minBalance:0}}
 function inMonth(t,m){return String(t.date||"").slice(0,7)===m}
-function balance(id){let v=n(acc(id).opening);for(const t of S.tx){if(t.type==="income"&&t.account===id)v+=n(t.amount);if(OUT.includes(t.type)&&t.account===id)v-=n(t.amount);if(["transfer","borrow","payback"].includes(t.type)){if(t.account===id)v-=n(t.amount);if(t.to===id)v+=n(t.amount)}}return v}
-function sum(m,fn){return S.tx.filter(t=>inMonth(t,m)&&fn(t)).reduce((a,t)=>a+n(t.amount),0)}
+function balance(id){let v=n(acc(id).opening);for(const t of loadTxLedger()){if(t.type==="income"&&t.account===id)v+=n(t.amount);if(OUT.includes(t.type)&&t.account===id)v-=n(t.amount);if(["transfer","borrow","payback"].includes(t.type)){if(t.account===id)v-=n(t.amount);if(t.to===id)v+=n(t.amount)}}return v}
+function sum(m,fn){return loadTxLedger().filter(t=>inMonth(t,m)&&fn(t)).reduce((a,t)=>a+n(t.amount),0)}
 function income(m){return sum(m,t=>t.type==="income")}function outflow(m){return sum(m,t=>OUT.includes(t.type))}
 function invested(m){return sum(m,t=>t.type==="investment")}function saved(m){return sum(m,t=>t.type==="saving")}
 function netWorth(){return S.accounts.reduce((a,x)=>a+balance(x.id),0)}
@@ -167,14 +167,12 @@ function spent(m,name){
   const key=normText(name);
   const aliases=new Set(PLAN_ALIASES[key]||[key]);
   const planWords=key.split(" ").filter(Boolean);
-  return sum(m,t=>{
-    if(!OUT.includes(t.type))return false;
+  return loadTxLedger().filter(t=>inMonth(t,m)&&OUT.includes(t.type)).reduce((total,t)=>{
     const fields=[normText(t.category),normText(t.description),normText(t.notes)];
-    if(fields.some(v=>aliases.has(v)))return true;
-    // Match a plan to a transaction when the plan name is contained in the
-    // description/category, while avoiding unrelated partial-word matches.
-    return fields.some(v=>v && planWords.length && planWords.every(w=>v.split(" ").includes(w)));
-  });
+    const matchesExact=fields.some(v=>v&&aliases.has(v));
+    const matchesWords=fields.some(v=>v&&planWords.length&&planWords.every(w=>v.split(" ").includes(w)));
+    return total+(matchesExact||matchesWords?n(t.amount):0);
+  },0);
 }
 function fmtMonth(m){return new Date(m+"-01T00:00:00").toLocaleString("en-IN",{month:"long",year:"numeric"})}
 function shiftMonth(d){let [y,m]=month.split("-").map(Number);m+=d;if(m>12){m=1;y++}if(m<1){m=12;y--}month=y+"-"+String(m).padStart(2,"0");render()}
@@ -196,7 +194,7 @@ function chart(){
   const vals=[]; const groups={}; let max=0,total=0;
   for(let i=1;i<=daysInMonth;i++){
     const ds=month+"-"+String(i).padStart(2,"0");
-    const rows=S.tx.filter(t=>OUT.includes(t.type)&&String(t.date||"").slice(0,10)===ds);
+    const rows=loadTxLedger().filter(t=>OUT.includes(t.type)&&String(t.date||"").slice(0,10)===ds);
     const v=rows.reduce((a,t)=>a+n(t.amount),0);
     vals.push({day:i,value:v}); if(v>0)groups[ds]=rows.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     max=Math.max(max,v); total+=v;
@@ -213,9 +211,9 @@ function chart(){
   return '<div class="spark" style="height:118px;gap:3px">'+bars+'</div><div class="row muted"><span>'+money(total)+' total across '+visible.length+' spending day'+(visible.length===1?"":"s")+'</span><span>Peak '+money(max)+'</span></div><div style="margin-top:10px">'+(daily||'<div class="empty">No outflow recorded this month.</div>')+'</div>';
 }
 function budgetHealth(){const b=budgets(month);if(!b.length)return '<div class="card empty">No monthly plan yet.<br><button class="btn small" onclick="openPlanner()">Build monthly allocation</button></div>';return b.map(x=>{const s=spent(month,x.name),budget=n(x.amount),p=budget?s/budget*100:(s>0?101:0),over=s>budget;return '<div class="card"><div class="row"><b>'+esc(x.name)+'</b><span class="'+(over?"negative":p>=80?"warning":"positive")+'">'+Math.round(p)+'%</span></div><div class="progress"><i style="width:'+Math.min(100,p)+'%;background:'+(over?"var(--red)":p>=80?"var(--orange)":"linear-gradient(90deg,var(--blue),var(--purple))")+'"></i></div><div class="row sub"><span>'+money(s)+' actual</span><span class="'+(over?"negative":"")+'">'+(over?"Over by "+money(s-budget):money(budget-s)+" left")+'</span></div></div>'}).join("")}
-function recent(limit){const a=S.tx.filter(t=>inMonth(t,month)).sort((x,y)=>String(y.date).localeCompare(String(x.date))).slice(0,limit);return a.length?a.map(txRow).join(""):'<div class="empty">No transactions yet.<br>Tap + to record salary, spending, SIPs, EMIs or savings.</div>'}
+function recent(limit){const a=loadTxLedger().filter(t=>inMonth(t,month)).sort((x,y)=>String(y.date).localeCompare(String(x.date))).slice(0,limit);return a.length?a.map(txRow).join(""):'<div class="empty">No transactions yet.<br>Tap + to record salary, spending, SIPs, EMIs or savings.</div>'}
 function txRow(t){const sign=t.type==="income"?"+":OUT.includes(t.type)?"−":"";return '<div class="tx"><div class="txIcon">'+ico(t.category||t.type)+'</div><div class="txMain"><div class="txDesc">'+esc(t.description||t.category||t.type)+'</div><div class="sub">'+new Date(t.date).toLocaleDateString("en-IN",{day:"2-digit",month:"short"})+' • '+esc(acc(t.account).name)+(t.to?" → "+esc(acc(t.to).name):"")+(t.needWant?" • "+esc(t.needWant):"")+'</div></div><div style="text-align:right"><div class="amount '+(sign==="−"?"negative":sign==="+"?"positive":"")+'">'+sign+money(t.amount)+'</div><button class="btn small secondary" onclick="openTx(\''+t.id+'\')">Edit</button></div></div>'}
-function transactions(){const a=S.tx.filter(t=>String(t.date).slice(0,7)===month&&(!query||[t.description,t.category,t.type,acc(t.account).name].join(" ").toLowerCase().includes(query.toLowerCase()))).sort((x,y)=>String(y.date).localeCompare(String(x.date)));return header()+monthBar()+'<div class="search"><input placeholder="Search salary, rent, SIP, account…" value="'+esc(query)+'" oninput="query=this.value;render()"></div><div class="kpi"><div class="metric"><span class="muted">Income</span><b class="positive">'+money(income(month))+'</b></div><div class="metric"><span class="muted">Outflow</span><b class="negative">'+money(outflow(month))+'</b></div><div class="metric"><span class="muted">Entries</span><b>'+a.length+'</b></div></div><div class="card">'+(a.length?a.map(txRow).join(""):'<div class="empty">No matching transactions.</div>')+'</div>'}
+function transactions(){const a=loadTxLedger().filter(t=>String(t.date).slice(0,7)===month&&(!query||[t.description,t.category,t.type,acc(t.account).name].join(" ").toLowerCase().includes(query.toLowerCase()))).sort((x,y)=>String(y.date).localeCompare(String(x.date)));return header()+monthBar()+'<div class="search"><input placeholder="Search salary, rent, SIP, account…" value="'+esc(query)+'" oninput="query=this.value;render()"></div><div class="kpi"><div class="metric"><span class="muted">Income</span><b class="positive">'+money(income(month))+'</b></div><div class="metric"><span class="muted">Outflow</span><b class="negative">'+money(outflow(month))+'</b></div><div class="metric"><span class="muted">Entries</span><b>'+a.length+'</b></div></div><div class="card">'+(a.length?a.map(txRow).join(""):'<div class="empty">No matching transactions.</div>')+'</div>'}
 function budget(){const b=budgets(month),plan=b.reduce((a,x)=>a+n(x.amount),0),actual=outflow(month);return header()+monthBar()+'<div class="card hero"><div class="sub">MONTHLY PLAN</div><div class="big">'+money(plan)+'</div><div class="sub">Actual '+money(actual)+' • '+(actual>plan?"Over by "+money(actual-plan):"Remaining "+money(plan-actual))+'</div></div><div class="card"><div class="row"><b>Allocation planner</b><button class="btn small" onclick="openPlanner()">Build / edit plan</button></div><div class="sub" style="margin-top:7px">Plan first. Record actual payments separately. Your dashboard compares both automatically.</div></div>'+(b.length?b.map(x=>{const s=spent(month,x.name),p=n(x.amount)?s/n(x.amount)*100:(s>0?101:0),over=s>n(x.amount);return '<div class="card" onclick="openBudget(\''+esc(x.name)+'\')"><div class="row"><b>'+esc(x.name)+'</b><span class="'+(over?"negative":p>=80?"warning":"")+'">'+money(s)+' / '+money(x.amount)+'</span></div><div class="progress"><i style="width:'+Math.min(p,100)+'%;background:'+(over?"var(--red)":p>=80?"var(--orange)":"var(--green)")+'"></i></div><div class="row sub"><span>'+Math.round(p)+'% used</span><span class="'+(over?"negative":"")+'">'+(over?"Over by "+money(s-n(x.amount)):money(n(x.amount)-s)+" remaining")+'</span></div></div>'}).join(""):'<div class="empty">No budgets for '+fmtMonth(month)+'.<br>Use Allocation Planner.</div>')+'<button class="btn secondary" style="width:100%" onclick="openBudget()">+ Add single plan item</button>'}
 function accounts(){return header()+'<div class="card hero"><div class="sub">TOTAL AVAILABLE MONEY</div><div class="big">'+money(netWorth())+'</div><div class="sub">Opening balances + connected transactions</div></div>'+S.accounts.map(a=>{const b=balance(a.id),min=n(a.minBalance),short=Math.max(0,min-b);return '<div class="card"><div class="row"><div><b style="font-size:17px">'+ico(a.name)+' '+esc(a.name)+'</b><div class="sub">'+esc(a.note||"")+'</div></div><b class="'+(short?"warning":b<0?"negative":"positive")+'">'+money(b)+'</b></div><hr><div class="row sub"><span>Minimum balance</span><b>'+money(min)+'</b></div><div class="row sub" style="margin-top:6px"><span>'+ (short?"⚠ Reserve shortfall":"✓ Rule status")+'</span><b class="'+(short?"warning":"positive")+'">'+(short?"−"+money(short):"Maintained")+'</b></div><button class="btn small secondary" style="margin-top:12px" onclick="openAccount(\''+a.id+'\')">Edit account</button></div>'}).join("")+'<button class="btn" style="width:100%" onclick="openAccount()">+ Add account</button>'}
 function more(){const due=S.recurring.filter(r=>!S.tx.some(t=>t.recurringId===r.id&&inMonth(t,month)));const goalTotal=S.goals.reduce((a,g)=>a+n(g.target),0),goalSaved=S.goals.reduce((a,g)=>a+n(g.saved),0);return header()+
