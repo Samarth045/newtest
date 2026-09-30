@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="My Money Control">
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icon.svg">
-<title>My Money Control • v13</title>
+<title>My Money Control • v14</title>
 <style>
 :root{--bg:#f5f7fb;--card:#fff;--text:#101828;--muted:#667085;--line:#e4e7ec;--blue:#1570ef;--blue2:#155eef;--green:#12b76a;--red:#f04438;--orange:#f79009;--purple:#7f56d9;--cyan:#06aed4;--shadow:0 8px 30px rgba(16,24,40,.06)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:15px -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,sans-serif;padding-bottom:94px}
@@ -71,31 +71,45 @@ let tab="home",month=thisMonth(),query="",toastTimer;
 const IDB_NAME="MyMoneyControlBackup",IDB_STORE="snapshots",IDB_VERSION=2;
 function idb(){return new Promise((resolve,reject)=>{if(!("indexedDB"in window))return reject(0);const r=indexedDB.open(IDB_NAME,IDB_VERSION);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(IDB_STORE))db.createObjectStore(IDB_STORE,{keyPath:"id",autoIncrement:true})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 let backupQueued=false;
-function save(snapshot=true,mode="replace"){
+function loadTxLedger(){
+  try{
+    const raw=localStorage.getItem(TX_KEY);
+    if(!raw)return Array.isArray(S.tx)?S.tx:[];
+    const parsed=JSON.parse(raw);
+    return Array.isArray(parsed)?parsed:[];
+  }catch(e){return Array.isArray(S.tx)?S.tx:[]}
+}
+function writeTxLedger(tx){
+  localStorage.setItem(TX_KEY,JSON.stringify(Array.isArray(tx)?tx:[]));
+}
+function save(snapshot=true,mode="state"){
   const previous=localStorage.getItem(KEY);
   if(snapshot&&previous)queueBackup(previous);
-
   try{
-    const latestTxRaw=localStorage.getItem(TX_KEY);
-    const latestTx=latestTxRaw?JSON.parse(latestTxRaw):[];
-    const currentTx=Array.isArray(S.tx)?S.tx:[];
     if(mode==="tx"){
-      const merged=new Map(latestTx.map(t=>[t.id,t]));
-      currentTx.forEach(t=>merged.set(t.id,t));
+      const latest=loadTxLedger();
+      const current=Array.isArray(S.tx)?S.tx:[];
+      const merged=new Map(latest.map(t=>[String(t.id),t]));
+      current.forEach(t=>merged.set(String(t.id),t));
       S.tx=Array.from(merged.values());
-    }else if(Array.isArray(latestTx)){
-      // Non-transaction changes must never overwrite a newer transaction ledger.
-      S.tx=latestTx;
+      writeTxLedger(S.tx);
+    }else if(mode==="reset"){
+      S.tx=[];
+      writeTxLedger([]);
+    }else{
+      // State saves never replace the transaction ledger.
+      S.tx=loadTxLedger();
     }
-    localStorage.setItem(TX_KEY,JSON.stringify(S.tx));
-  }catch(e){}
-
-  localStorage.setItem(KEY,JSON.stringify(S));
+    localStorage.setItem(KEY,JSON.stringify(S));
+  }catch(e){
+    console.error("My Money Control save failed",e);
+    throw e;
+  }
   toast("Saved")
 }
 function queueBackup(data){if(backupQueued)return;backupQueued=true;setTimeout(async()=>{backupQueued=false;try{const db=await idb(),tx=db.transaction(IDB_STORE,"readwrite");tx.objectStore(IDB_STORE).add({createdAt:new Date().toISOString(),data:data||JSON.stringify(S),kind:"pre-change"});await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});const db2=await idb(),q=db2.transaction(IDB_STORE,"readwrite").objectStore(IDB_STORE).getAll();q.onsuccess=()=>{const a=q.result.sort((x,y)=>x.createdAt.localeCompare(y.createdAt));a.slice(0,Math.max(0,a.length-40)).forEach(x=>db2.transaction(IDB_STORE,"readwrite").objectStore(IDB_STORE).delete(x.id))}}catch(e){}},180)}
 async function latestBackup(){try{const db=await idb(),q=db.transaction(IDB_STORE,"readonly").objectStore(IDB_STORE).getAll();return await new Promise((r,j)=>{q.onsuccess=()=>r(q.result.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0]||null);q.onerror=()=>j(q.error)})}catch(e){return null}}
-async function restoreLatest(){const b=await latestBackup();if(!b)return toast("No automatic backup available");if(!confirm("Restore backup from "+new Date(b.createdAt).toLocaleString()+"? Current data will be replaced."))return;S=JSON.parse(b.data);migrate();render();toast("Backup restored")}
+async function restoreLatest(){const b=await latestBackup();if(!b)return toast("No automatic backup available");if(!confirm("Restore backup from "+new Date(b.createdAt).toLocaleString()+"? Current data will be replaced."))return;S=JSON.parse(b.data);migrate();writeTxLedger(S.tx);save(false,"state");render();toast("Backup restored")}
 function toast(msg){clearTimeout(toastTimer);let el=document.getElementById("toast");if(!el){el=document.createElement("div");el.id="toast";el.style.cssText="position:fixed;z-index:200;left:50%;bottom:105px;transform:translateX(-50%);background:#101828;color:#fff;padding:10px 14px;border-radius:999px;font-size:12px;font-weight:750;box-shadow:0 8px 25px #0004";document.body.appendChild(el)}el.textContent=msg;el.style.display="block";toastTimer=setTimeout(()=>el.style.display="none",1800)}
 function acc(id){return S.accounts.find(a=>a.id===id)||{name:"Unknown",opening:0,minBalance:0}}
 function inMonth(t,m){return String(t.date||"").slice(0,7)===m}
@@ -109,8 +123,16 @@ function normText(v){return String(v||"").toLowerCase().replace(/&/g,"and").repl
 const PLAN_ALIASES={"mf sip":["mf sip","mutual fund sip"],"grt gold sip":["grt gold sip","gold sip"],"gold sip":["gold sip","grt gold sip"]};
 function spent(m,name){
   const key=normText(name);
-  const aliases=PLAN_ALIASES[key]||[key];
-  return sum(m,t=>OUT.includes(t.type)&&[t.category,t.description].some(v=>aliases.includes(normText(v))));
+  const aliases=new Set(PLAN_ALIASES[key]||[key]);
+  const planWords=key.split(" ").filter(Boolean);
+  return sum(m,t=>{
+    if(!OUT.includes(t.type))return false;
+    const fields=[normText(t.category),normText(t.description),normText(t.notes)];
+    if(fields.some(v=>aliases.has(v)))return true;
+    // Match a plan to a transaction when the plan name is contained in the
+    // description/category, while avoiding unrelated partial-word matches.
+    return fields.some(v=>v && planWords.length && planWords.every(w=>v.split(" ").includes(w)));
+  });
 }
 function fmtMonth(m){return new Date(m+"-01T00:00:00").toLocaleString("en-IN",{month:"long",year:"numeric"})}
 function shiftMonth(d){let [y,m]=month.split("-").map(Number);m+=d;if(m>12){m=1;y++}if(m<1){m=12;y--}month=y+"-"+String(m).padStart(2,"0");render()}
@@ -189,8 +211,8 @@ function deleteRecurring(id){if(!confirm("Delete recurring item? Existing paid t
 function openQuick(){openTx(null,"expense")}
 function backup(){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:"application/json"}));a.download="MyMoneyControl-"+today()+".json";a.click();toast("JSON backup exported")}
 function csv(){const rows=[["Date","Type","Category","Description","Account","To","Classification","Amount"],...S.tx.map(t=>[t.date,t.type,t.category,t.description,acc(t.account).name,t.to?acc(t.to).name:"",t.needWant,t.amount])];const txt=rows.map(r=>r.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(",")).join("\n"),a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"text/csv"}));a.download="MyMoneyControl-transactions.csv";a.click();toast("CSV exported")}
-function restore(input){const f=input.files[0];if(!f)return;f.text().then(txt=>{try{const d=JSON.parse(txt);if(!d.accounts||!d.tx)throw 0;if(!confirm("Replace current data with this backup?"))return;S=d;migrate();render();toast("Backup restored")}catch(e){alert("Invalid backup file.")}})}
-function resetAll(){if(!confirm("Erase ALL local financial data? Export a backup first."))return;if(!confirm("Final confirmation: permanently reset this browser's finance data?"))return;S=seed();save(false);render();toast("Local data reset")}
+function restore(input){const f=input.files[0];if(!f)return;f.text().then(txt=>{try{const d=JSON.parse(txt);if(!d.accounts||!d.tx)throw 0;if(!confirm("Replace current data with this backup?"))return;S=d;migrate();writeTxLedger(S.tx);save(false,"state");render();toast("Backup restored")}catch(e){alert("Invalid backup file.")}})}
+function resetAll(){if(!confirm("Erase ALL local financial data? Export a backup first."))return;if(!confirm("Final confirmation: permanently reset this browser's finance data?"))return;S=seed();save(false,"reset");render();toast("Local data reset")}
 function setTheme(v){S.settings.theme=v;applyTheme();save(false);render()}
 function applyTheme(){document.body.classList.toggle("dark",S.settings.theme==="dark"||(S.settings.theme==="auto"&&matchMedia("(prefers-color-scheme:dark)").matches))}
 async function requestNotifications(){S.settings.dailyReminder=true;save(false);if("Notification"in window){const p=await Notification.requestPermission();if(p!=="granted"){S.settings.dailyReminder=false;save(false);alert("Notifications were not enabled by the browser.")}}render()}
