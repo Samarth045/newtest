@@ -245,9 +245,9 @@ function saveTx(id){
   if(!category)return alert("Choose or enter a category.");
   const description=document.getElementById("a_desc").value.trim()||category,date=document.getElementById("a_date").value;
   const canonical=loadTxLedger();
-  const duplicate=canonical.some(x=>x.id!==id&&x.type===type&&n(x.amount)===amount&&x.account===account&&(x.to||"")===(to||"")&&String(x.date)===String(date)&&String(x.description||"")===description);
+  const duplicate=canonical.some(x=>String(x.id)!==String(editingId)&&x.type===type&&n(x.amount)===amount&&x.account===account&&(x.to||"")===(to||"")&&String(x.date)===String(date)&&String(x.description||"")===description);
   if(duplicate)return alert("A matching transaction already exists for this date and account.");
-  const o={id:id||uid(),amount,type,category,description,account,to,needWant:document.getElementById("a_nw").value,date,notes:document.getElementById("a_notes").value};
+  const o={id:editingId||uid(),amount,type,category,description,account,to,needWant:document.getElementById("a_nw").value,date,notes:document.getElementById("a_notes").value};
   localStorage.setItem(TX_ITEM_PREFIX+String(o.id),JSON.stringify(o));
   S.tx=loadTxLedger();
   localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
