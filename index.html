@@ -38,6 +38,7 @@ input,select,textarea{width:100%;background:var(--bg);color:var(--text);border:1
 <nav class="tabs" id="tabs"></nav>
 <div id="modal"></div>
 <script>
+window.addEventListener("error",e=>{const el=document.getElementById("app");if(el&&(!el.innerHTML||el.innerHTML.trim()===""))el.innerHTML='<div class="card empty"><h2>My Money Control</h2><p>Recovered from a local app error.</p><button class="btn" onclick="location.reload()">Reload app</button></div>';});
 const KEY="mmc_pwa_v2";
 const OUT=["expense","investment","emi","saving"];
 const TYPES=["expense","income","investment","emi","saving","transfer","borrow","payback"];
@@ -50,8 +51,9 @@ const today=dateLocal, thisMonth=()=>today().slice(0,7);
 const icons={food:"🍽️",dining:"🍽️",transport:"🚗",petrol:"⛽",shopping:"🛍️",bill:"💡",utility:"💡",health:"💊",entertainment:"🎬",education:"🎓",rent:"🏠",subscription:"🔁",family:"👨‍👩‍👧",investment:"📈",emi:"🏦",saving:"💰",salary:"💵",transfer:"↔️",borrow:"🤝",payback:"↩️",gold:"🪙",lic:"🛡️"};
 function ico(x){x=String(x||"").toLowerCase();for(const k in icons)if(x.includes(k))return icons[k];return "💳"}
 function seed(){return{version:11,accounts:[{id:"boi",name:"BOI",opening:0,minBalance:0,note:""},{id:"hdfc",name:"HDFC",opening:0,minBalance:20000,note:"Salary"},{id:"kotak",name:"Kotak",opening:0,minBalance:0,note:"Reserve"},{id:"cash",name:"Cash",opening:0,minBalance:0,note:""}],budgets:{},tx:[],recurring:[],goals:[],settings:{theme:"auto",dailyReminder:false,budgetAlerts:true}}}
-let S=JSON.parse(localStorage.getItem(KEY)||"null")||seed();
-function migrate(){if(!S.accounts)S.accounts=[];S.accounts=S.accounts.filter(a=>a.id!=="icici");if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0;if(a.id==="hdfc"&&n(a.minBalance)===0)a.minBalance=20000});if(!S.budgets)S.budgets={};if(!S.tx)S.tx=[];if(!S.recurring)S.recurring=[];if(!S.goals)S.goals=[];if(!S.settings)S.settings={theme:"auto",dailyReminder:false,budgetAlerts:true};S.version=11;localStorage.setItem(KEY,JSON.stringify(S))}
+let S=seed();
+try{const raw=localStorage.getItem(KEY);if(raw){const parsed=JSON.parse(raw);if(parsed&&typeof parsed==="object")S=parsed}}catch(e){try{localStorage.removeItem(KEY)}catch(_){} }
+function migrate(){if(!S||typeof S!=="object")S=seed();if(!Array.isArray(S.accounts))S.accounts=[];S.accounts=S.accounts.filter(a=>a&&a.id!=="icici");if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0;if(a.id==="hdfc"&&n(a.minBalance)===0)a.minBalance=20000});if(!S.budgets||typeof S.budgets!=="object"||Array.isArray(S.budgets))S.budgets={};if(!Array.isArray(S.tx))S.tx=[];if(!Array.isArray(S.recurring))S.recurring=[];if(!Array.isArray(S.goals))S.goals=[];if(!S.settings||typeof S.settings!=="object")S.settings={};if(!S.settings.theme)S.settings.theme="auto";if(S.settings.dailyReminder===undefined)S.settings.dailyReminder=false;if(S.settings.budgetAlerts===undefined)S.settings.budgetAlerts=true;S.version=11;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 migrate();
 let tab="home",month=thisMonth(),query="",toastTimer;
 const IDB_NAME="MyMoneyControlBackup",IDB_STORE="snapshots",IDB_VERSION=2;
