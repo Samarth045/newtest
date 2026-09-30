@@ -39,8 +39,10 @@ input,select,textarea{width:100%;background:var(--bg);color:var(--text);border:1
 <div id="modal"></div>
 <script>
 window.addEventListener("error",e=>{const el=document.getElementById("app");if(el&&(!el.innerHTML||el.innerHTML.trim()===""))el.innerHTML='<div class="card empty"><h2>My Money Control</h2><p>Recovered from a local app error.</p><button class="btn" onclick="location.reload()">Reload app</button></div>';});
-const KEY="mmc_pwa_v2";
+const KEY="mmc_pwa_v14";
 const TX_KEY=KEY+"_transactions";
+const LEGACY_KEY="mmc_pwa_v2";
+const LEGACY_TX_KEY=LEGACY_KEY+"_transactions";
 const OUT=["expense","investment","emi","saving"];
 const TYPES=["expense","income","investment","emi","saving","transfer","borrow","payback"];
 const uid=()=>{try{if(crypto&&typeof crypto.randomUUID==="function")return crypto.randomUUID()}catch(e){}return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12)+"-"+Math.random().toString(36).slice(2,12)};
@@ -51,10 +53,25 @@ const dateTimeLocal=()=>{const d=new Date();return dateLocal()+"T"+String(d.getH
 const today=dateLocal, thisMonth=()=>today().slice(0,7);
 const icons={food:"🍽️",dining:"🍽️",transport:"🚗",petrol:"⛽",shopping:"🛍️",bill:"💡",utility:"💡",health:"💊",entertainment:"🎬",education:"🎓",rent:"🏠",subscription:"🔁",family:"👨‍👩‍👧",investment:"📈",emi:"🏦",saving:"💰",salary:"💵",transfer:"↔️",borrow:"🤝",payback:"↩️",gold:"🪙",lic:"🛡️"};
 function ico(x){x=String(x||"").toLowerCase();for(const k in icons)if(x.includes(k))return icons[k];return "💳"}
-function seed(){return{version:11,accounts:[{id:"boi",name:"BOI",opening:0,minBalance:0,note:""},{id:"hdfc",name:"HDFC",opening:0,minBalance:20000,note:"Salary"},{id:"kotak",name:"Kotak",opening:0,minBalance:0,note:"Reserve"},{id:"cash",name:"Cash",opening:0,minBalance:0,note:""}],budgets:{},tx:[],recurring:[],goals:[],settings:{theme:"auto",dailyReminder:false,budgetAlerts:true}}}
+function seed(){return{version:14,accounts:[{id:"boi",name:"BOI",opening:0,minBalance:0,note:""},{id:"hdfc",name:"HDFC",opening:0,minBalance:20000,note:"Salary"},{id:"kotak",name:"Kotak",opening:0,minBalance:0,note:"Reserve"},{id:"cash",name:"Cash",opening:0,minBalance:0,note:""}],budgets:{},tx:[],recurring:[],goals:[],settings:{theme:"auto",dailyReminder:false,budgetAlerts:true}}}
 let S=seed();
-try{const raw=localStorage.getItem(KEY);if(raw){const parsed=JSON.parse(raw);if(parsed&&typeof parsed==="object")S=parsed}}catch(e){try{localStorage.removeItem(KEY)}catch(_){} }
-function migrate(){if(!S||typeof S!=="object")S=seed();if(!Array.isArray(S.accounts))S.accounts=[];S.accounts=S.accounts.filter(a=>a&&a.id!=="icici");if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0;if(a.id==="hdfc"&&n(a.minBalance)===0)a.minBalance=20000});if(!S.budgets||typeof S.budgets!=="object"||Array.isArray(S.budgets))S.budgets={};if(!Array.isArray(S.tx))S.tx=[];if(!Array.isArray(S.recurring))S.recurring=[];if(!Array.isArray(S.goals))S.goals=[];if(!S.settings||typeof S.settings!=="object")S.settings={};if(!S.settings.theme)S.settings.theme="auto";if(S.settings.dailyReminder===undefined)S.settings.dailyReminder=false;if(S.settings.budgetAlerts===undefined)S.settings.budgetAlerts=true;S.version=11;
+try{
+  // One-time migration from the old v2 storage namespace. The new namespace
+  // prevents an old open tab from writing stale data back over this app.
+  const raw=localStorage.getItem(KEY)||localStorage.getItem(LEGACY_KEY);
+  if(raw){
+    const parsed=JSON.parse(raw);
+    if(parsed&&typeof parsed==="object")S=parsed;
+  }
+  if(!localStorage.getItem(KEY)){
+    const legacyTx=localStorage.getItem(LEGACY_TX_KEY);
+    if(legacyTx){
+      const parsedTx=JSON.parse(legacyTx);
+      if(Array.isArray(parsedTx))S.tx=parsedTx;
+    }
+  }
+}catch(e){console.error("Storage migration failed",e)}
+function migrate(){if(!S||typeof S!=="object")S=seed();if(!Array.isArray(S.accounts))S.accounts=[];S.accounts=S.accounts.filter(a=>a&&a.id!=="icici");if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0;if(a.id==="hdfc"&&n(a.minBalance)===0)a.minBalance=20000});if(!S.budgets||typeof S.budgets!=="object"||Array.isArray(S.budgets))S.budgets={};if(!Array.isArray(S.tx))S.tx=[];if(!Array.isArray(S.recurring))S.recurring=[];if(!Array.isArray(S.goals))S.goals=[];if(!S.settings||typeof S.settings!=="object")S.settings={};if(!S.settings.theme)S.settings.theme="auto";if(S.settings.dailyReminder===undefined)S.settings.dailyReminder=false;if(S.settings.budgetAlerts===undefined)S.settings.budgetAlerts=true;S.version=14;
 try{
   const txRaw=localStorage.getItem(TX_KEY);
   if(txRaw){
