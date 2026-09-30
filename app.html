@@ -83,6 +83,33 @@ input,select,textarea{width:100%;background:var(--bg);color:var(--text);border:1
   .planLine{grid-template-columns:78px 1fr 62px}
   .homeHero .big{font-size:32px}
 }
+/* v20 premium dashboard */
+.homeHero{position:relative;overflow:hidden;padding:20px;background:radial-gradient(circle at 90% 10%,rgba(255,255,255,.18),transparent 28%),linear-gradient(135deg,#0b7cff 0%,#5147e8 58%,#7f56d9 100%)}
+.homeHero:after{content:"";position:absolute;width:180px;height:180px;border:1px solid #ffffff20;border-radius:50%;right:-75px;bottom:-95px;box-shadow:0 0 0 24px #ffffff08,0 0 0 48px #ffffff05}
+.homeHeroTop{position:relative;z-index:1}
+.heroBalanceRow{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.heroLabel{font-size:11px;letter-spacing:.8px;font-weight:800;color:#dbeafe}
+.heroBalance{font-size:40px;line-height:1.05;font-weight:900;letter-spacing:-2px;margin:5px 0}
+.heroDelta{font-size:11px;color:#e0e7ff}
+.heroBadge{padding:8px 11px;border-radius:999px;background:#fff18;border:1px solid #ffffff2b;font-size:11px;font-weight:800;white-space:nowrap}
+.homeKpis{position:relative;z-index:1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:18px}
+.homeKpi{padding:11px;border-radius:15px;background:#ffffff15;border:1px solid #ffffff22;backdrop-filter:blur(8px)}
+.homeKpi span{display:block;font-size:10px;color:#dbeafe}.homeKpi b{display:block;font-size:16px;margin-top:4px}
+.homeKpi small{display:block;margin-top:3px;color:#c7d2fe;font-size:9px}
+.premiumGrid{display:grid;grid-template-columns:1.15fr .85fr;gap:11px}
+.premiumCard{background:var(--card);border:1px solid var(--line);border-radius:21px;padding:16px;box-shadow:var(--shadow);min-width:0}
+.cardTitle{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:13px}
+.cardTitle b{font-size:14px}.cardTitle span{font-size:10px;color:var(--muted)}
+.cashflowSvg{width:100%;height:145px;display:block;overflow:visible}
+.chartGrid{stroke:var(--line);stroke-width:1}.chartLine{fill:none;stroke:var(--blue);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.chartArea{fill:url(#areaFade)}.chartDot{fill:var(--card);stroke:var(--blue);stroke-width:2}
+.chartLabels{display:flex;justify-content:space-between;color:var(--muted);font-size:9px;margin-top:-1px}
+.ringWrap{display:flex;align-items:center;gap:16px}.ring{width:122px;height:122px;border-radius:50%;position:relative;flex:none}.ring:after{content:"";position:absolute;inset:25px;border-radius:50%;background:var(--card)}.ringCenter{position:absolute;inset:0;z-index:1;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:850}
+.legendStack{display:flex;flex-direction:column;gap:8px;flex:1}.legendRow{display:flex;justify-content:space-between;gap:8px;font-size:11px}.legendLeft{display:flex;align-items:center;gap:6px}.legendDot{width:8px;height:8px;border-radius:50%;flex:none}
+.topSpend{display:flex;flex-direction:column;gap:11px}.spendRow{display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center}.spendIcon{width:26px;height:26px;border-radius:8px;background:var(--bg);display:grid;place-items:center;font-size:14px}.spendName{font-size:11px;font-weight:750}.spendTrack{height:6px;background:var(--line);border-radius:99px;margin-top:4px;overflow:hidden}.spendFill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--blue),var(--purple))}.spendVal{font-size:11px;font-weight:850}
+.insightStrip{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.insight{padding:13px;border-radius:16px;background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow)}.insight .emoji{font-size:17px}.insight b{display:block;font-size:13px;margin-top:7px}.insight span{display:block;color:var(--muted);font-size:10px;line-height:1.35;margin-top:3px}
+.quickRow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.quickTile{border:1px solid var(--line);background:var(--card);border-radius:15px;padding:11px;text-align:left;color:var(--text)}.quickTile i{font-style:normal;font-size:17px}.quickTile b{display:block;font-size:10px;margin-top:5px}.quickTile span{display:block;font-size:9px;color:var(--muted);margin-top:2px}
+.sectionTitle{margin-top:18px}
+@media(max-width:620px){.premiumGrid{grid-template-columns:1fr}.insightStrip{grid-template-columns:1fr 1fr}.quickRow{grid-template-columns:repeat(2,1fr)}.heroBalance{font-size:34px}.ringWrap{justify-content:center}}
 </style>
 </head>
 <body>
@@ -235,18 +262,52 @@ function monthBar(){return '<div class="month"><button onclick="shiftMonth(-1)">
 function header(){return '<div class="top"><div><div class="brand">My Money Control</div><div class="sub">Private • Offline-first • Your device</div></div><button class="btn small secondary" onclick="openTx()">Quick Add</button></div>'}
 function nav(){document.getElementById("tabs").innerHTML=[["home","⌂","Home"],["tx","▤","Activity"],["budget","◉","Plan"],["accounts","▣","Accounts"],["more","✦","More"]].map(x=>'<button class="'+(tab===x[0]?"active":"")+'" onclick="tab=\''+x[0]+'\';render()"><span>'+x[1]+'</span>'+x[2]+'</button>').join("")}
 function home(){
+  const ledger=loadTxLedger();
   const inc=income(month),out=outflow(month),inv=invested(month),sav=saved(month);
   const plan=budgets(month).reduce((a,b)=>a+n(b.amount),0);
-  const remaining=plan-out;
+  const remaining=plan-out, net=inc-out;
+  const savingsRate=inc>0?Math.max(0,(inc-out)/inc*100):0;
   const low=S.accounts.filter(a=>n(a.minBalance)>balance(a.id));
+  const spend=ledger.filter(t=>inMonth(t,month)&&t.type==="expense");
+  const cats={};spend.forEach(t=>{const k=t.category||"Other";cats[k]=(cats[k]||0)+n(t.amount)});
+  const topCats=Object.entries(cats).sort((a,b)=>b[1]-a[1]);
+  const top=topCats[0]||["No spending",0];
   return header()+monthBar()+
-  '<div class="card hero homeHero"><div class="homeHeroTop"><div><div class="sub">AVAILABLE MONEY</div><div class="big">'+money(netWorth())+'</div><div class="sub">Across '+S.accounts.length+' accounts</div></div><div class="homeHeroBadge">'+(remaining>=0?money(remaining)+' plan left':'Over plan '+money(Math.abs(remaining)))+'</div></div><div class="homeKpis"><div class="homeKpi"><span>Income</span><b>'+money(inc)+'</b></div><div class="homeKpi"><span>Outflow</span><b>'+money(out)+'</b></div><div class="homeKpi"><span>Invested</span><b>'+money(inv)+'</b></div></div></div>'+
+  '<div class="card hero homeHero"><div class="heroBalanceRow"><div><div class="heroLabel">TOTAL AVAILABLE</div><div class="heroBalance">'+money(netWorth())+'</div><div class="heroDelta">'+(net>=0?'+'+money(net):'-'+money(Math.abs(net)))+' net cash flow this month</div></div><div class="heroBadge">'+(remaining>=0?money(remaining)+' plan left':'Over plan '+money(Math.abs(remaining)))+'</div></div><div class="homeKpis"><div class="homeKpi"><span>Income</span><b>'+money(inc)+'</b><small>This month</small></div><div class="homeKpi"><span>Outflow</span><b>'+money(out)+'</b><small>'+ledger.filter(t=>inMonth(t,month)&&OUT.includes(t.type)).length+' entries</small></div><div class="homeKpi"><span>Savings rate</span><b>'+Math.round(savingsRate)+'%</b><small>After outflow</small></div></div></div>'+
   (low.length?'<div class="notice">⚠ '+low.map(a=>esc(a.name)+' below '+money(a.minBalance)).join(' • ')+'</div>':'')+
-  '<div class="sectionTitle">Where did my money go?</div><div class="dashboardGrid"><div class="dashCard">'+categorySpendChart()+'</div><div class="dashCard">'+outflowMixChart()+'</div></div>'+
-  '<div class="sectionTitle">Daily outflow</div><div class="dashCard dailyCard">'+dailyCompactChart()+'</div>'+
-  '<div class="sectionTitle">Plan progress</div><div class="dashCard">'+planMiniChart()+'</div>'+
+  '<div class="sectionTitle">Money overview</div><div class="premiumGrid"><div class="premiumCard">'+cashflowChart()+'</div><div class="premiumCard">'+outflowRing()+'</div></div>'+
+  '<div class="sectionTitle">Spending breakdown</div><div class="premiumGrid"><div class="premiumCard">'+topSpendingChart(topCats)+'</div><div class="premiumCard">'+planMiniChart()+'</div></div>'+
+  '<div class="sectionTitle">Quick insights</div><div class="insightStrip">'+
+  '<div class="insight"><div class="emoji">🍽️</div><b>'+esc(top[0])+'</b><span>'+money(top[1])+' is your top spending category</span></div>'+
+  '<div class="insight"><div class="emoji">📊</div><b>'+Math.round(savingsRate)+'% saved</b><span>'+money(Math.max(0,net))+' remaining after monthly outflow</span></div>'+
+  '<div class="insight"><div class="emoji">🎯</div><b>'+money(Math.max(0,remaining))+' left</b><span>Available against your monthly plan</span></div></div>'+
   '<div class="sectionTitle">Accounts</div><div class="accountStrip">'+S.accounts.map(a=>'<div class="accountPill"><b>'+esc(a.name)+'</b><span>'+money(balance(a.id))+'</span></div>').join('')+'</div>'+
-  '<div class="sectionTitle">Recent activity</div><div class="dashCard compactRecent">'+recent(4)+'</div>';
+  '<div class="sectionTitle">Recent activity</div><div class="premiumCard compactRecent">'+recent(4)+'</div>';
+}
+
+function cashflowChart(){
+  const [yy,mm]=month.split("-").map(Number),days=new Date(yy,mm,0).getDate();
+  const vals=[];let max=0;
+  for(let d=1;d<=days;d++){const ds=month+"-"+String(d).padStart(2,"0");const v=loadTxLedger().filter(t=>OUT.includes(t.type)&&String(t.date||"").slice(0,10)===ds).reduce((a,t)=>a+n(t.amount),0);vals.push(v);max=Math.max(max,v)}
+  const w=520,h=145,p=10;const pts=vals.map((v,i)=>{const x=p+i*((w-p*2)/(days-1));const y=h-p-(max?v/max*(h-p*2):0);return [x,y]});
+  const line=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
+  const area=line+" L "+pts[pts.length-1][0]+" "+(h-p)+" L "+pts[0][0]+" "+(h-p)+" Z";
+  const marks=[5,10,15,20,25,30].filter(x=>x<=days);
+  return '<div class="cardTitle"><div><b>Daily cash outflow</b><span style="display:block">Spending intensity through '+fmtMonth(month)+'</span></div><span>Peak '+money(max)+'</span></div><svg class="cashflowSvg" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none"><defs><linearGradient id="areaFade" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#1570ef" stop-opacity=".25"/><stop offset="1" stop-color="#1570ef" stop-opacity="0"/></linearGradient></defs><line class="chartGrid" x1="10" y1="115" x2="510" y2="115"/><line class="chartGrid" x1="10" y1="70" x2="510" y2="70"/><line class="chartGrid" x1="10" y1="25" x2="510" y2="25"/><path class="chartArea" d="'+area+'"/><path class="chartLine" d="'+line+'"/>'+pts.filter((_,i)=>vals[i]>0).map((p)=>'<circle class="chartDot" cx="'+p[0]+'" cy="'+p[1]+'" r="3"/>').join('')+'</svg><div class="chartLabels">'+marks.map(x=>'<span>'+x+'</span>').join('')+'</div>';
+}
+
+function outflowRing(){
+  const expense=sum(month,t=>t.type==="expense"),investment=invested(month),emi=sum(month,t=>t.type==="emi"),saving=saved(month),total=expense+investment+emi+saving;
+  const parts=[["Spending",expense,"#1570ef"],["Investments",investment,"#7f56d9"],["EMIs",emi,"#f79009"],["Savings",saving,"#12b76a"]].filter(x=>x[1]>0);
+  if(!total)return '<div class="cardTitle"><b>Outflow mix</b><span>₹0</span></div><div class="empty" style="padding:30px 4px">Add transactions to see the mix.</div>';
+  let cur=0;const stops=parts.map(x=>{const s=cur;cur+=x[1]/total*100;return x[2]+" "+s+"% "+cur+"%"}).join(",");
+  return '<div class="cardTitle"><b>Outflow mix</b><span>'+money(total)+'</span></div><div class="ringWrap"><div class="ring" style="background:conic-gradient('+stops+')"><div class="ringCenter">'+money(total)+'<br><span class="sub">outflow</span></div></div><div class="legendStack">'+parts.map(x=>'<div class="legendRow"><span class="legendLeft"><i class="legendDot" style="background:'+x[2]+'"></i>'+x[0]+'</span><b>'+money(x[1])+'</b></div>').join('')+'</div></div>';
+}
+
+function topSpendingChart(data){
+  if(!data.length)return '<div class="cardTitle"><b>Top categories</b><span>₹0</span></div><div class="empty" style="padding:30px 4px">No spending recorded.</div>';
+  const top=data.slice(0,5),max=top[0][1]||1,total=data.reduce((a,x)=>a+x[1],0);
+  return '<div class="cardTitle"><b>Top categories</b><span>'+money(total)+'</span></div><div class="topSpend">'+top.map(([name,val])=>'<div class="spendRow"><div class="spendIcon">'+ico(name)+'</div><div><div class="spendName">'+esc(name)+'</div><div class="spendTrack"><div class="spendFill" style="width:'+Math.max(5,val/max*100)+'%"></div></div></div><div class="spendVal">'+money(val)+'</div></div>').join('')+'</div>';
 }
 
 function categorySpendChart(){
