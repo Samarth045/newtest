@@ -50,7 +50,10 @@ function seed(){return{accounts:[
 {id:"icici",name:"ICICI",opening:0,minBalance:0,note:""},
 {id:"cash",name:"Cash",opening:0,minBalance:0,note:""}
 ],budgets:{},tx:[],recurring:[],goals:[],theme:"auto"}}
-let S=JSON.parse(localStorage.getItem(KEY)||"null")||seed(),tab="home",month=thisMonth(),query="";
+let S=JSON.parse(localStorage.getItem(KEY)||"null")||seed();
+function migrateState(){if(!S.accounts)S.accounts=[];S.accounts.forEach(a=>{if(a.minBalance===undefined)a.minBalance=0});if(!S.accounts.some(a=>a.id==="boi"))S.accounts.unshift({id:"boi",name:"BOI",opening:0,minBalance:0,note:""});if(!S.budgets)S.budgets={};if(!S.tx)S.tx=[];if(!S.recurring)S.recurring=[];if(!S.goals)S.goals=[];localStorage.setItem(KEY,JSON.stringify(S))}
+migrateState();
+let tab="home",month=thisMonth(),query="";
 function save(makeBackup=true){localStorage.setItem(KEY,JSON.stringify(S));if(makeBackup)queueSnapshot()}
 const IDB_NAME="MyMoneyControlBackup",IDB_STORE="snapshots",IDB_VERSION=1;
 function idb(){return new Promise((resolve,reject)=>{if(!("indexedDB" in window))return reject(new Error("IndexedDB unavailable"));let r=indexedDB.open(IDB_NAME,IDB_VERSION);r.onupgradeneeded=()=>{let db=r.result;if(!db.objectStoreNames.contains(IDB_STORE)){let st=db.createObjectStore(IDB_STORE,{keyPath:"id",autoIncrement:true});st.createIndex("createdAt","createdAt")}};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
