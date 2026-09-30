@@ -257,6 +257,7 @@ function spent(m,name){
 function fmtMonth(m){return new Date(m+"-01T00:00:00").toLocaleString("en-IN",{month:"long",year:"numeric"})}
 function shiftMonth(d){let [y,m]=month.split("-").map(Number);m+=d;if(m>12){m=1;y++}if(m<1){m=12;y--}month=y+"-"+String(m).padStart(2,"0");render()}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function jsarg(v){return esc(JSON.stringify(String(v??"")))}
 function options(a,v){return a.map(x=>'<option value="'+esc(x)+'" '+(x===v?"selected":"")+'>'+esc(x.charAt(0).toUpperCase()+x.slice(1))+'</option>').join("")}
 function monthBar(){return '<div class="month"><button onclick="shiftMonth(-1)">‹</button><b>'+fmtMonth(month)+'</b><button onclick="shiftMonth(1)">›</button></div>'}
 function header(){return '<div class="top"><div><div class="brand">My Money Control</div><div class="sub">Private • Offline-first • Your device</div></div><button class="btn small secondary" onclick="openTx()">Quick Add</button></div>'}
