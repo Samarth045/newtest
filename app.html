@@ -311,10 +311,12 @@ async function hydrateFromDurable(){
     const txs=await req(db.transaction(TX_STORE,"readonly").objectStore(TX_STORE).getAll());
     if(rec&&rec.payload){
       const verify=await sha256(JSON.stringify(rec.payload));
+      if(rec.checksum&&verify!==rec.checksum)throw new Error("Durable state integrity check failed");
       const lm=localMeta();
       const localTs=lm?.updatedAt||"";
-      if(!lm||!localTs||String(rec.updatedAt)>=String(localTs)){
-        S={...rec.payload,tx:Array.isArray(txs)?txs:[]};
+      if(lm?.checksum==="pending"||!lm||!localTs||String(rec.updatedAt)>=String(localTs)){
+        const durableTxs=Array.isArray(txs)&&txs.length?txs:(Array.isArray(rec.payload.tx)?rec.payload.tx:[]);
+        S={...rec.payload,tx:durableTxs};
         migrate();
         try{localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}))}catch(e){}
         markLocalMeta(rec.updatedAt,rec.checksum||verify);
@@ -383,7 +385,7 @@ function writeTxLedger(tx){
   localStorage.setItem(TX_KEY,JSON.stringify(next));
 }
 S.tx=loadTxLedger();
-try{localStorage.setItem(KEY,JSON.stringify(S));markLocalMeta(new Date().toISOString(),"")}catch(e){}
+try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
 function save(snapshot=true,mode="state"){
   const previous=localStorage.getItem(KEY);
   if(snapshot&&previous)queueBackup(previous);
@@ -395,6 +397,7 @@ function save(snapshot=true,mode="state"){
       S.tx=loadTxLedger();
     }
     localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
+    markLocalMeta(new Date().toISOString(),"pending");
     durableWrite(mode==="reset"?"reset":"save","state","state");
   }catch(e){console.error("My Money Control save failed",e);throw e}
   toast("Saved")
@@ -587,6 +590,7 @@ function saveTx(id){
   localStorage.setItem(TX_ITEM_PREFIX+String(o.id),JSON.stringify(o));
   S.tx=loadTxLedger();
   localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
+  markLocalMeta(new Date().toISOString(),"pending");
   durableWrite("transaction",editingId?"update":"create",o.id);
   closeModal();render()
 }
@@ -598,6 +602,7 @@ function deleteTx(id){
   localStorage.removeItem(TX_ITEM_PREFIX+String(id));
   S.tx=loadTxLedger();
   localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
+  markLocalMeta(new Date().toISOString(),"pending");
   durableWrite("transaction","delete",id);
   closeModal();render();toast("Transaction deleted • restore from More → Data protection if needed")
 }
@@ -625,6 +630,7 @@ function markPaid(id){
   localStorage.setItem(TX_ITEM_PREFIX+String(tx.id),JSON.stringify(tx));
   S.tx=loadTxLedger();
   localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
+  markLocalMeta(new Date().toISOString(),"pending");
   durableWrite("transaction","recurring-paid",tx.id);
   render();toast(r.name+" marked paid");
 }
