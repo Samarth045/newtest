@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="My Money Control">
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icon.svg">
-<title>My Money Control • v23</title>
+<title>My Money Control • v24</title>
 <style>
 :root{--bg:#f5f7fb;--card:#fff;--text:#101828;--muted:#667085;--line:#e4e7ec;--blue:#1570ef;--blue2:#155eef;--green:#12b76a;--red:#f04438;--orange:#f79009;--purple:#7f56d9;--cyan:#06aed4;--shadow:0 8px 30px rgba(16,24,40,.06)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:15px -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,sans-serif;padding-bottom:94px}
@@ -216,13 +216,122 @@ function migrate(){
   if(!S.settings.theme)S.settings.theme="auto";
   if(S.settings.dailyReminder===undefined)S.settings.dailyReminder=false;
   if(S.settings.budgetAlerts===undefined)S.settings.budgetAlerts=true;
-  S.version=23;
+  S.version=24;
 }
 migrate();
 let tab="home",month=thisMonth(),query="",toastTimer;
-const IDB_NAME="MyMoneyControlBackup",IDB_STORE="snapshots",IDB_VERSION=2;
-function idb(){return new Promise((resolve,reject)=>{if(!("indexedDB"in window))return reject(0);const r=indexedDB.open(IDB_NAME,IDB_VERSION);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(IDB_STORE))db.createObjectStore(IDB_STORE,{keyPath:"id",autoIncrement:true})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
-let backupQueued=false;
+const IDB_NAME="MyMoneyControlBackup",IDB_STORE="snapshots",IDB_VERSION=4,STATE_STORE="state",TX_STORE="transactions",JOURNAL_STORE="journal",META_STORE="meta",LOCAL_META_KEY=KEY+"_durability";
+let durableDb=null,backupQueued=false,durableWriteInFlight=Promise.resolve(),storageStatus={indexedDB:false,persistent:false,usage:0,quota:0,lastWriteAt:null,lastChecksum:null,lastError:null};
+function idb(){
+  return new Promise((resolve,reject)=>{
+    if(!("indexedDB"in window))return reject(new Error("IndexedDB unavailable"));
+    if(durableDb)return resolve(durableDb);
+    const r=indexedDB.open(IDB_NAME,IDB_VERSION);
+    r.onupgradeneeded=()=>{
+      const db=r.result;
+      if(!db.objectStoreNames.contains(IDB_STORE))db.createObjectStore(IDB_STORE,{keyPath:"id",autoIncrement:true});
+      if(!db.objectStoreNames.contains(STATE_STORE))db.createObjectStore(STATE_STORE,{keyPath:"id"});
+      if(!db.objectStoreNames.contains(TX_STORE))db.createObjectStore(TX_STORE,{keyPath:"id"});
+      if(!db.objectStoreNames.contains(JOURNAL_STORE))db.createObjectStore(JOURNAL_STORE,{keyPath:"id",autoIncrement:true});
+      if(!db.objectStoreNames.contains(META_STORE))db.createObjectStore(META_STORE,{keyPath:"id"});
+    };
+    r.onblocked=()=>console.warn("My Money Control database upgrade is blocked by another tab.");
+    r.onsuccess=()=>{
+      durableDb=r.result;
+      durableDb.onversionchange=()=>{durableDb.close();durableDb=null};
+      durableDb.onclose=()=>{durableDb=null;storageStatus.indexedDB=false};
+      storageStatus.indexedDB=true;
+      resolve(durableDb);
+    };
+    r.onerror=()=>reject(r.error||new Error("IndexedDB open failed"));
+  });
+}
+function req(r){return new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+function txDone(t){return new Promise((resolve,reject)=>{t.oncomplete=()=>resolve();t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error||new Error("IndexedDB transaction aborted"))})}
+async function sha256(text){
+  if(!(crypto&&crypto.subtle))return "";
+  const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+function canonicalPayload(){
+  return JSON.stringify({...S,tx:loadTxLedger(),version:24,schemaVersion:24});
+}
+function localMeta(){
+  try{return JSON.parse(localStorage.getItem(LOCAL_META_KEY)||"null")}catch(e){return null}
+}
+function markLocalMeta(updatedAt,checksum){
+  try{localStorage.setItem(LOCAL_META_KEY,JSON.stringify({updatedAt,checksum,schemaVersion:24}))}catch(e){}
+}
+async function requestPersistentStorage(){
+  try{
+    if(!navigator.storage)return false;
+    let p=await navigator.storage.persisted();
+    if(!p&&navigator.storage.persist)p=await navigator.storage.persist();
+    storageStatus.persistent=!!p;
+    if(navigator.storage.estimate){const e=await navigator.storage.estimate();storageStatus.usage=e.usage||0;storageStatus.quota=e.quota||0}
+    return !!p;
+  }catch(e){storageStatus.lastError=String(e);return false}
+}
+async function durableWrite(action="save",entity="state",entityId="state"){
+  const run=async()=>{
+    try{
+      const db=await idb();
+      const payload=canonicalPayload(),checksum=await sha256(payload),updatedAt=new Date().toISOString();
+      const record={id:"state",schemaVersion:24,updatedAt,checksum,payload:JSON.parse(payload)};
+      const txs=loadTxLedger();
+      let t;
+      try{t=db.transaction([STATE_STORE,TX_STORE,JOURNAL_STORE,META_STORE],"readwrite",{durability:"strict"})}
+      catch(e){t=db.transaction([STATE_STORE,TX_STORE,JOURNAL_STORE,META_STORE],"readwrite")}
+      const ss=t.objectStore(STATE_STORE),ts=t.objectStore(TX_STORE),js=t.objectStore(JOURNAL_STORE),ms=t.objectStore(META_STORE);
+      ss.put(record);
+      ts.clear();
+      txs.forEach(x=>ts.put(x));
+      js.add({timestamp:updatedAt,action,entity,entityId:String(entityId||""),schemaVersion:24,checksum});
+      ms.put({id:"lastWrite",updatedAt,checksum,schemaVersion:24});
+      await txDone(t);
+      storageStatus.indexedDB=true;storageStatus.lastWriteAt=updatedAt;storageStatus.lastChecksum=checksum;storageStatus.lastError=null;
+      markLocalMeta(updatedAt,checksum);
+      return true;
+    }catch(e){
+      storageStatus.lastError=String(e&&e.message||e);
+      return false;
+    }
+  };
+  durableWriteInFlight=durableWriteInFlight.then(async()=>{
+    if(navigator.locks)return navigator.locks.request("mmc-data-write",{mode:"exclusive"},run);
+    return run();
+  });
+  return durableWriteInFlight;
+}
+async function hydrateFromDurable(){
+  try{
+    await requestPersistentStorage();
+    const db=await idb();
+    const rec=await req(db.transaction(STATE_STORE,"readonly").objectStore(STATE_STORE).get("state"));
+    const txs=await req(db.transaction(TX_STORE,"readonly").objectStore(TX_STORE).getAll());
+    if(rec&&rec.payload){
+      const verify=await sha256(JSON.stringify(rec.payload));
+      const lm=localMeta();
+      const localTs=lm?.updatedAt||"";
+      if(!lm||!localTs||String(rec.updatedAt)>=String(localTs)){
+        S={...rec.payload,tx:Array.isArray(txs)?txs:[]};
+        migrate();
+        try{localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}))}catch(e){}
+        markLocalMeta(rec.updatedAt,rec.checksum||verify);
+        storageStatus.lastWriteAt=rec.updatedAt;storageStatus.lastChecksum=rec.checksum||verify;
+        return true;
+      }
+    }
+    migrate();
+    await durableWrite("migration","state","state");
+    return true;
+  }catch(e){
+    storageStatus.indexedDB=false;storageStatus.lastError=String(e&&e.message||e);
+    migrate();
+    return false;
+  }
+}
+
 function loadTxLedger(){
   try{
     const byId=new Map();
@@ -274,7 +383,7 @@ function writeTxLedger(tx){
   localStorage.setItem(TX_KEY,JSON.stringify(next));
 }
 S.tx=loadTxLedger();
-try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+try{localStorage.setItem(KEY,JSON.stringify(S));markLocalMeta(new Date().toISOString(),"")}catch(e){}
 function save(snapshot=true,mode="state"){
   const previous=localStorage.getItem(KEY);
   if(snapshot&&previous)queueBackup(previous);
@@ -286,12 +395,13 @@ function save(snapshot=true,mode="state"){
       S.tx=loadTxLedger();
     }
     localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
+    durableWrite(mode==="reset"?"reset":"save","state","state");
   }catch(e){console.error("My Money Control save failed",e);throw e}
   toast("Saved")
 }
 function queueBackup(data){if(backupQueued)return;backupQueued=true;setTimeout(async()=>{backupQueued=false;try{const db=await idb(),tx=db.transaction(IDB_STORE,"readwrite");tx.objectStore(IDB_STORE).add({createdAt:new Date().toISOString(),data:data||JSON.stringify(S),kind:"pre-change"});await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});const db2=await idb(),q=db2.transaction(IDB_STORE,"readwrite").objectStore(IDB_STORE).getAll();q.onsuccess=()=>{const a=q.result.sort((x,y)=>x.createdAt.localeCompare(y.createdAt));a.slice(0,Math.max(0,a.length-40)).forEach(x=>db2.transaction(IDB_STORE,"readwrite").objectStore(IDB_STORE).delete(x.id))}}catch(e){}},180)}
 async function latestBackup(){try{const db=await idb(),q=db.transaction(IDB_STORE,"readonly").objectStore(IDB_STORE).getAll();return await new Promise((r,j)=>{q.onsuccess=()=>r(q.result.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0]||null);q.onerror=()=>j(q.error)})}catch(e){return null}}
-async function restoreLatest(){const b=await latestBackup();if(!b)return toast("No automatic backup available");if(!confirm("Restore backup from "+new Date(b.createdAt).toLocaleString()+"? Current data will be replaced."))return;const current=localStorage.getItem(KEY);if(current)queueBackup(current);S=JSON.parse(b.data);migrate();writeTxLedger(S.tx);save(false,"state");render();toast("Backup restored")}
+async function restoreLatest(){const b=await latestBackup();if(!b)return toast("No automatic backup available");if(!confirm("Restore backup from "+new Date(b.createdAt).toLocaleString()+"? Current data will be replaced."))return;const current=localStorage.getItem(KEY);if(current)queueBackup(current);S=JSON.parse(b.data);migrate();writeTxLedger(S.tx);save(false,"state");durableWrite("restore","state","latest-backup");render();toast("Backup restored")}
 function toast(msg){clearTimeout(toastTimer);let el=document.getElementById("toast");if(!el){el=document.createElement("div");el.id="toast";el.style.cssText="position:fixed;z-index:200;left:50%;bottom:105px;transform:translateX(-50%);background:#101828;color:#fff;padding:10px 14px;border-radius:999px;font-size:12px;font-weight:750;box-shadow:0 8px 25px #0004";document.body.appendChild(el)}el.textContent=msg;el.style.display="block";toastTimer=setTimeout(()=>el.style.display="none",1800)}
 function acc(id){return S.accounts.find(a=>a.id===id)||{name:"Unknown",opening:0,minBalance:0}}
 function inMonth(t,m){return String(t.date||"").slice(0,7)===m}
@@ -477,6 +587,7 @@ function saveTx(id){
   localStorage.setItem(TX_ITEM_PREFIX+String(o.id),JSON.stringify(o));
   S.tx=loadTxLedger();
   localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
+  durableWrite("transaction",editingId?"update":"create",o.id);
   closeModal();render()
 }
 function deleteTx(id){
@@ -487,6 +598,7 @@ function deleteTx(id){
   localStorage.removeItem(TX_ITEM_PREFIX+String(id));
   S.tx=loadTxLedger();
   localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
+  durableWrite("transaction","delete",id);
   closeModal();render();toast("Transaction deleted • restore from More → Data protection if needed")
 }
 function openBudget(name){const b=budgets(month).find(x=>x.name===name)||{name:"",amount:"",kind:"expense"};document.getElementById("modal").innerHTML='<div class="overlay"><div class="sheet"><div class="sheetHead"><h2>'+(name?"Edit plan item":"Add plan item")+'</h2><button class="iconBtn" onclick="closeModal()">×</button></div><label>Name</label><input id="b_name" value="'+esc(b.name)+'" placeholder="Rent, MF SIP, Food…"><label>Planned monthly amount</label><input id="b_amt" type="number" min="0" value="'+esc(b.amount)+'"><label>Plan type</label><select id="b_kind">'+options(["expense","investment","emi","saving"],b.kind)+'</select><div class="actions"><button class="btn secondary" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveBudget('+jsarg(name||"")+')">Save</button></div>'+(name?'<button class="btn danger" style="width:100%;margin-top:9px" onclick="deleteBudget('+jsarg(name)+')">Delete plan item</button>':'')+'</div></div>'}
@@ -513,6 +625,7 @@ function markPaid(id){
   localStorage.setItem(TX_ITEM_PREFIX+String(tx.id),JSON.stringify(tx));
   S.tx=loadTxLedger();
   localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
+  durableWrite("transaction","recurring-paid",tx.id);
   render();toast(r.name+" marked paid");
 }
 function deleteRecurring(id){if(!confirm("Delete recurring item? Existing paid transactions stay."))return;S.recurring=S.recurring.filter(x=>x.id!==id);save();render()}
@@ -520,14 +633,24 @@ function openQuick(){openTx(null,"expense")}
 function backup(){const exportState={...S,tx:loadTxLedger(),version:23};const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(exportState,null,2)],{type:"application/json"}));a.download="MyMoneyControl-"+today()+".json";a.click();toast("JSON backup exported")}
 function csv(){const rows=[["Date","Type","Category","Description","Account","To","Classification","Amount"],...loadTxLedger().map(t=>[t.date,t.type,t.category,t.description,acc(t.account).name,t.to?acc(t.to).name:"",t.needWant,t.amount])];const txt=rows.map(r=>r.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(",")).join("\n"),a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"text/csv"}));a.download="MyMoneyControl-transactions.csv";a.click();toast("CSV exported")}
 function restore(input){const f=input.files[0];if(!f)return;f.text().then(txt=>{try{const d=JSON.parse(txt);if(!d.accounts||!d.tx)throw 0;if(!confirm("Replace current data with this backup?"))return;const current=localStorage.getItem(KEY);if(current)queueBackup(current);S=d;migrate();writeTxLedger(S.tx);save(false,"state");render();toast("Backup restored")}catch(e){alert("Invalid backup file.")}})}
-function resetAll(){if(!confirm("Erase ALL local financial data? Export a backup first."))return;if(!confirm("Final confirmation: permanently reset this browser's finance data?"))return;const current=localStorage.getItem(KEY);if(current)queueBackup(current);S=seed();save(false,"reset");render();toast("Local data reset")}
+function resetAll(){if(!confirm("Erase ALL local financial data? Export a backup first."))return;if(!confirm("Final confirmation: permanently reset this browser's finance data?"))return;const current=localStorage.getItem(KEY);if(current)queueBackup(current);S=seed();save(false,"reset");durableWrite("reset","state","reset");render();toast("Local data reset")}
 function setTheme(v){S.settings.theme=v;applyTheme();save(false);render()}
 function applyTheme(){document.body.classList.toggle("dark",S.settings.theme==="dark"||(S.settings.theme==="auto"&&matchMedia("(prefers-color-scheme:dark)").matches))}
 async function requestNotifications(){S.settings.dailyReminder=true;save(false);if("Notification"in window){const p=await Notification.requestPermission();if(p!=="granted"){S.settings.dailyReminder=false;save(false);alert("Notifications were not enabled by the browser.")}}render()}
 function openPlannerOrBudget(){openPlanner()}
 function closeModal(){document.getElementById("modal").innerHTML=""}
 function render(){applyTheme();let h=tab==="home"?home():tab==="tx"?transactions():tab==="budget"?budget():tab==="accounts"?accounts():more();document.getElementById("app").innerHTML=h;nav()}
-applyTheme();
+async function initMyMoneyControl(){
+  try{
+    await hydrateFromDurable();
+    migrate();
+    S.tx=loadTxLedger();
+    applyTheme();
+    render();
+  }catch(e){
+    migrate();applyTheme();render();
+  }
+}
 window.addEventListener("storage",e=>{
   try{
     if(e.key&&e.key.startsWith(TX_ITEM_PREFIX)){
@@ -539,8 +662,8 @@ window.addEventListener("storage",e=>{
     }
   }catch(err){}
 });
-if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js?v=23",{updateViaCache:"none"}).then(r=>r.update()).catch(()=>{}));
-render();
+if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js?v=24",{updateViaCache:"none"}).then(r=>r.update()).catch(()=>{}));
+initMyMoneyControl();
 </script>
 </body>
 </html>
