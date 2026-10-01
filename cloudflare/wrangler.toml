@@ -5,7 +5,7 @@ compatibility_date = "2026-10-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "my-money-control"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "0599c756-fa94-4bbf-81d3-fc225513a738"
   migrations_dir = "migrations"
 
 

@@ -92,16 +92,6 @@ export default {async fetch(request,env){
       await pruneSnapshots(env,vaultId,30);
       return json({ok:true,snapshot:{...snap,objectKey:env.BACKUPS?"vaults/"+vaultId+"/snapshots/"+snap.snapshotId+".bin":null,encrypted:!!env.BACKUPS}},201);
     }
-    const sm=sub.match(/^\/snapshots\/([^/]+)$/);
-    if(sm&&request.method==="POST"){
-      const snapshotId=sm[1],snap=await getSnapshot(env,vaultId,snapshotId);if(!snap)return json({error:"Snapshot not found"},404);
-      if(false){
-        const payload=await readAndVerifySnapshot(env,access.secret,snap);
-        const at=new Date().toISOString();
-        await markSnapshot(env,snapshotId,{verifiedAt:at,verificationStatus:"verified"});
-        return json({ok:true,verified:true,snapshotId,revision:snap.revision,checksum:snap.checksum,verifiedAt:at,sizeBytes:new TextEncoder().encode(payload).length});
-      }
-    }
     const verify=sub.match(/^\/snapshots\/([^/]+)\/verify$/);
     if(verify&&request.method==="POST"){
       const snap=await getSnapshot(env,vaultId,verify[1]);if(!snap)return json({error:"Snapshot not found"},404);
@@ -117,7 +107,7 @@ export default {async fetch(request,env){
       const checksum=await sha256(payload);
       const batch=await env.DB.batch([
         env.DB.prepare("UPDATE vaults SET revision=?,payload=?,checksum=?,updated_at=? WHERE vault_id=? AND revision=?").bind(nextRevision,payload,checksum,now,vaultId,vault.revision),
-        env.DB.prepare("INSERT INTO sync_journal(vault_id,revision,device_id,action,checksum,payload_size,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM vaults WHERE vault_id=? AND revision=?)").bind(vaultId,nextRevision,"recovery","restore:"+restore[1],checksum,payload.length,vaultId,nextRevision)
+        env.DB.prepare("INSERT INTO sync_journal(vault_id,revision,device_id,action,checksum,payload_size,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM vaults WHERE vault_id=? AND revision=?)").bind(vaultId,nextRevision,"recovery","restore:"+restore[1],checksum,payload.length,now,vaultId,nextRevision)
       ]);
       if(Number(batch?.[0]?.meta?.changes||0)!==1)return json({ok:false,error:"Restore lost a concurrency race; no restore applied."},409);
       return json({ok:true,restoredSnapshotId:restore[1],preRestoreSnapshotId:pre.snapshotId,revision:nextRevision,checksum,restoredAt:now});
