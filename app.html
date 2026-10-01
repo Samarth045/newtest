@@ -624,9 +624,12 @@ function save(snapshot=true,mode="state"){
     }
     localStorage.setItem(KEY,JSON.stringify({...S,tx:S.tx}));
     markLocalMeta(new Date().toISOString(),"pending");
-    durableWrite(mode==="reset"?"reset":"save","state","state");
+    // Pass the mode through as the durable action so that cloud-* saves are
+    // recognized by durableWrite and do NOT re-mark dirty / re-queue a sync
+    // (which previously caused an infinite sync loop and a stuck toast).
+    durableWrite(mode==="reset"?"reset":(mode&&mode!=="state"?mode:"save"),"state","state");
   }catch(e){console.error("My Money Control save failed",e);throw e}
-  toast("Saved")
+  if(!(typeof mode==="string"&&mode.startsWith("cloud-")))toast("Saved")
 }
 function queueBackup(data){if(backupQueued)return;backupQueued=true;setTimeout(async()=>{backupQueued=false;try{const db=await idb(),tx=db.transaction(IDB_STORE,"readwrite");tx.objectStore(IDB_STORE).add({createdAt:new Date().toISOString(),data:data||JSON.stringify(S),kind:"pre-change"});await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=()=>j(tx.error)});const db2=await idb(),q=db2.transaction(IDB_STORE,"readwrite").objectStore(IDB_STORE).getAll();q.onsuccess=()=>{const a=q.result.sort((x,y)=>x.createdAt.localeCompare(y.createdAt));a.slice(0,Math.max(0,a.length-40)).forEach(x=>db2.transaction(IDB_STORE,"readwrite").objectStore(IDB_STORE).delete(x.id))}}catch(e){}},180)}
 async function latestBackup(){try{const db=await idb(),q=db.transaction(IDB_STORE,"readonly").objectStore(IDB_STORE).getAll();return await new Promise((r,j)=>{q.onsuccess=()=>r(q.result.sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0]||null);q.onerror=()=>j(q.error)})}catch(e){return null}}
