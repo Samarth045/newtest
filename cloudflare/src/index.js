@@ -147,7 +147,7 @@ export default {
 
         const nextRevision=vault.revision+1;
         const now=new Date().toISOString();
-        await env.DB.batch([
+        const batch=await env.DB.batch([
           env.DB.prepare(
             "UPDATE vaults SET revision=?,payload=?,checksum=?,updated_at=? WHERE vault_id=? AND revision=?"
           ).bind(nextRevision,payloadText,checksum,now,vaultId,vault.revision),
@@ -155,6 +155,11 @@ export default {
             "INSERT INTO sync_journal(vault_id,revision,device_id,action,checksum,payload_size,created_at) VALUES(?,?,?,?,?,?,?)"
           ).bind(vaultId,nextRevision,deviceId,action,checksum,payloadText.length,now)
         ]);
+        const changed=Number(batch?.[0]?.meta?.changes||0);
+        if(changed!==1){
+          const latest=await getVault(env,vaultId);
+          return json({ok:false,conflict:true,conflictId:null,server:{revision:latest.revision,checksum:latest.checksum,updatedAt:latest.updated_at,payload:JSON.parse(latest.payload)}},409);
+        }
         return json({ok:true,vaultId,revision:nextRevision,checksum,updatedAt:now});
       }
 
