@@ -7,3 +7,8 @@ binding = "DB"
 database_name = "my-money-control"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
   migrations_dir = "migrations"
+
+
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "my-money-control-backups"
