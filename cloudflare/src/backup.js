@@ -29,13 +29,13 @@ export async function markSnapshot(env, snapshotId, fields={}) {
   await env.DB.prepare("UPDATE backup_snapshots SET "+sets.join(",")+" WHERE snapshot_id=?").bind(...values).run();
 }
 
-export async function pruneSnapshots(env, vaultId, keep=30) {
+export async function pruneSnapshots(env, vaultId) {
   const rows=await env.DB.prepare("SELECT snapshot_id,reason,created_at,object_key FROM backup_snapshots WHERE vault_id=? ORDER BY created_at DESC").bind(vaultId).all();
   const list=rows.results||[];
-  const protectedRows=list.filter(x=>["manual","pre-restore","emergency"].includes(x.reason));
-  const scheduled=list.filter(x=>!["manual","pre-restore","emergency"].includes(x.reason));
-  const allowed=Math.max(0,keep-protectedRows.length);
-  const doomed=scheduled.slice(allowed);
+  const limits={scheduled:14,manual:12,"pre-restore":8,emergency:4};
+  const groups={};
+  for(const row of list){const key=limits[row.reason]!==undefined?row.reason:"scheduled";(groups[key]||(groups[key]=[])).push(row)}
+  const doomed=Object.entries(groups).flatMap(([reason,items])=>items.slice(limits[reason]));
   for(const row of doomed){
     await env.DB.prepare("DELETE FROM backup_snapshots WHERE snapshot_id=?").bind(row.snapshot_id).run();
     if(env.BACKUPS&&row.object_key)await env.BACKUPS.delete(row.object_key);
