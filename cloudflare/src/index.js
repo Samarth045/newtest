@@ -1,4 +1,6 @@
 import { createSnapshot, listSnapshots, getSnapshot } from "./backup.js";
+async function encryptForR2(secret, plaintext) { const keyMaterial=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),"PBKDF2",false,["deriveKey"]); const salt=crypto.getRandomValues(new Uint8Array(16)); const iv=crypto.getRandomValues(new Uint8Array(12)); const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:100000,hash:"SHA-256"},keyMaterial,{name:"AES-GCM",length:256},false,["encrypt"]); const cipher=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(plaintext))); const out=new Uint8Array(salt.length+iv.length+cipher.length);out.set(salt,0);out.set(iv,16);out.set(cipher,28);return out}
+
 const CORS = {
   "Access-Control-Allow-Origin": "https://samarth045.github.io",
   "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
@@ -70,6 +72,17 @@ export default {
 
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/,"") || "/";
+
+      if (path === "/v1/vault/"+vaultId+"/snapshots" && request.method === "POST" && env.BACKUPS) {
+        const body = await readJson(request, 5000);
+        const vaultNow = await getVault(env, vaultId);
+        if (!vaultNow) return json({error:"Vault not found"},404);
+        const snap = await createSnapshot(env, vaultId, String(body.reason||"manual"));
+        const encrypted = await encryptForR2(access.secret, vaultNow.payload);
+        const key = "vaults/"+vaultId+"/snapshots/"+snap.snapshotId+".bin";
+        await env.BACKUPS.put(key, encrypted, {httpMetadata:{contentType:"application/octet-stream"}});
+        return json({ok:true,snapshot:{...snap,objectKey:key,encrypted:true}},201);
+      }
 
       if (path === "/health" && request.method === "GET") {
         return json({ok:true,service:"My Money Control Sync",version:"1.0",time:new Date().toISOString()});
