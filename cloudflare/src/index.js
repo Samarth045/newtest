@@ -73,17 +73,6 @@ export default {
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/,"") || "/";
 
-      if (path === "/v1/vault/"+vaultId+"/snapshots" && request.method === "POST" && env.BACKUPS) {
-        const body = await readJson(request, 5000);
-        const vaultNow = await getVault(env, vaultId);
-        if (!vaultNow) return json({error:"Vault not found"},404);
-        const snap = await createSnapshot(env, vaultId, String(body.reason||"manual"));
-        const encrypted = await encryptForR2(access.secret, vaultNow.payload);
-        const key = "vaults/"+vaultId+"/snapshots/"+snap.snapshotId+".bin";
-        await env.BACKUPS.put(key, encrypted, {httpMetadata:{contentType:"application/octet-stream"}});
-        return json({ok:true,snapshot:{...snap,objectKey:key,encrypted:true}},201);
-      }
-
       if (path === "/health" && request.method === "GET") {
         return json({ok:true,service:"My Money Control Sync",version:"1.0",time:new Date().toISOString()});
       }
@@ -117,6 +106,17 @@ export default {
       const access = await requireVault(request,env,vaultId);
       if (access.error) return json({error:access.error},access.status);
       const vault = access.vault;
+
+      if (path === "/v1/vault/"+vaultId+"/snapshots" && request.method === "POST" && env.BACKUPS) {
+        const body = await readJson(request, 5000);
+        const vaultNow = await getVault(env, vaultId);
+        if (!vaultNow) return json({error:"Vault not found"},404);
+        const snap = await createSnapshot(env, vaultId, String(body.reason||"manual"));
+        const encrypted = await encryptForR2(access.secret, vaultNow.payload);
+        const key = "vaults/"+vaultId+"/snapshots/"+snap.snapshotId+".bin";
+        await env.BACKUPS.put(key, encrypted, {httpMetadata:{contentType:"application/octet-stream"}});
+        return json({ok:true,snapshot:{...snap,objectKey:key,encrypted:true}},201);
+      }
 
       if (path === "/v1/vault/"+vaultId+"/snapshots" && request.method === "GET") {
         const rows = await listSnapshots(env, vaultId, url.searchParams.get("limit") || 30);
