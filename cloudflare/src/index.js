@@ -126,6 +126,12 @@ export default {
       if (path === "/v1/vault/"+vaultId+"/snapshots" && request.method === "POST") {
         const body = await readJson(request, 5000);
         const snap = await createSnapshot(env, vaultId, String(body.reason||"manual"));
+        if (env.BACKUPS) {
+          const encrypted = await encryptForR2(access.secret, vault.payload);
+          const key = "vaults/"+vaultId+"/snapshots/"+snap.snapshotId+".bin";
+          await env.BACKUPS.put(key, encrypted, {httpMetadata:{contentType:"application/octet-stream"}});
+          snap.objectKey=key;snap.encrypted=true;
+        }
         return json({ok:true,snapshot:snap},201);
       }
 
