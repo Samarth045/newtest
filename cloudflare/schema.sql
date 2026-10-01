@@ -50,6 +50,11 @@ CREATE TABLE IF NOT EXISTS backup_snapshots (
   payload TEXT NOT NULL,
   checksum TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  object_key TEXT,
+  encrypted INTEGER NOT NULL DEFAULT 0,
+  verified_at TEXT,
+  verification_status TEXT NOT NULL DEFAULT 'pending',
+  size_bytes INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (vault_id) REFERENCES vaults(vault_id) ON DELETE CASCADE
 );
 
