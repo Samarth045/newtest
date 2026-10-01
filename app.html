@@ -312,6 +312,9 @@ async function hydrateFromDurable(){
     if(rec&&rec.payload){
       const verify=await sha256(JSON.stringify(rec.payload));
       if(rec.checksum&&verify!==rec.checksum)throw new Error("Durable state integrity check failed");
+      const expectedTx=Array.isArray(rec.payload.tx)?rec.payload.tx.slice().sort((a,b)=>String(a.id).localeCompare(String(b.id))):[];
+      const actualTx=Array.isArray(txs)?txs.slice().sort((a,b)=>String(a.id).localeCompare(String(b.id))):[];
+      if(JSON.stringify(expectedTx)!==JSON.stringify(actualTx)&&actualTx.length)throw new Error("Transaction store integrity check failed");
       const lm=localMeta();
       const localTs=lm?.updatedAt||"";
       if(lm?.checksum==="pending"||!lm||!localTs||String(rec.updatedAt)>=String(localTs)){
