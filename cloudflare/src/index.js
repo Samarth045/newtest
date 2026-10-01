@@ -152,8 +152,8 @@ export default {
             "UPDATE vaults SET revision=?,payload=?,checksum=?,updated_at=? WHERE vault_id=? AND revision=?"
           ).bind(nextRevision,payloadText,checksum,now,vaultId,vault.revision),
           env.DB.prepare(
-            "INSERT INTO sync_journal(vault_id,revision,device_id,action,checksum,payload_size,created_at) VALUES(?,?,?,?,?,?,?)"
-          ).bind(vaultId,nextRevision,deviceId,action,checksum,payloadText.length,now)
+            "INSERT INTO sync_journal(vault_id,revision,device_id,action,checksum,payload_size,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM vaults WHERE vault_id=? AND revision=?)"
+          ).bind(vaultId,nextRevision,deviceId,action,checksum,payloadText.length,now,vaultId,nextRevision)
         ]);
         const changed=Number(batch?.[0]?.meta?.changes||0);
         if(changed!==1){
