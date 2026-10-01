@@ -1,4 +1,12 @@
 {
+  "name": "my-money-control",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-first personal finance PWA with Cloudflare D1/R2 sync",
+  "scripts": {
+    "test": "node --test",
+    "deploy": "wrangler deploy --config cloudflare/wrangler.toml"
+  },
   "devDependencies": {
     "wrangler": "^4.145.0"
   }
