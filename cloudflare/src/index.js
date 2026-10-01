@@ -1,3 +1,4 @@
+import { createSnapshot, listSnapshots, getSnapshot } from "./backup.js";
 const CORS = {
   "Access-Control-Allow-Origin": "https://samarth045.github.io",
   "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
@@ -103,6 +104,17 @@ export default {
       const access = await requireVault(request,env,vaultId);
       if (access.error) return json({error:access.error},access.status);
       const vault = access.vault;
+
+      if (path === "/v1/vault/"+vaultId+"/snapshots" && request.method === "GET") {
+        const rows = await listSnapshots(env, vaultId, url.searchParams.get("limit") || 30);
+        return json({ok:true,snapshots:rows.results||[]});
+      }
+
+      if (path === "/v1/vault/"+vaultId+"/snapshots" && request.method === "POST") {
+        const body = await readJson(request, 5000);
+        const snap = await createSnapshot(env, vaultId, String(body.reason||"manual"));
+        return json({ok:true,snapshot:snap},201);
+      }
 
       if (request.method === "GET") {
         return json({
