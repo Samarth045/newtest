@@ -6,7 +6,7 @@ export async function createSnapshot(env, vaultId, reason="scheduled") {
   const payload = vault.payload;
   const checksum = vault.checksum;
   await env.DB.prepare(
-    "INSERT INTO backup_snapshots(snapshot_id,vault_id,revision,reason,payload,checksum,created_at) VALUES(?,?,?,?,?,?,?)"
+    "INSERT INTO backup_snapshots(snapshot_id,vault_id,revision,reason,payload,checksum,created_at,verification_status) VALUES(?,?,?,?,?,?,?,?)"
   ).bind(id,vaultId,vault.revision,reason,payload,checksum,now).run();
   return {snapshotId:id,vaultId,revision:vault.revision,checksum,createdAt:now};
 }
